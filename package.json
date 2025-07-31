@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@dimforge/rapier3d": "^0.18.0",
     "@hookform/resolvers": "^3.9.1",
     "@pmndrs/assets": "^1.7.0",
     "@radix-ui/react-accordion": "1.2.2",

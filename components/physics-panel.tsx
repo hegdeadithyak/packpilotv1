@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -16,6 +16,55 @@ export function PhysicsPanel() {
   const [brakingForce, setBrakingForce] = useState(0.8)
   const [turningForce, setTurningForce] = useState(0.5)
   const [gravityMultiplier, setGravityMultiplier] = useState(1.0)
+  const [physicsStats, setPhysicsStats] = useState({ collisions: 0, contacts: 0, stability: 100 })
+  const [isSimulationRunning, setIsSimulationRunning] = useState(false)
+  
+  const workerRef = useRef<Worker | null>(null)
+  const messageIdRef = useRef(0)
+
+  // Initialize physics worker
+  useEffect(() => {
+    if (typeof Worker !== 'undefined') {
+      workerRef.current = new Worker(new URL('../workers/physics-worker.ts', import.meta.url))
+      
+      workerRef.current.onmessage = (event) => {
+        const { type, payload, id } = event.data
+        
+        switch (type) {
+          case 'SIMULATION_UPDATE':
+            setPhysicsStats(payload.stats)
+            break
+          case 'OPTIMAL_PLACEMENT_FOUND':
+            console.log('Optimal placements found:', payload.solutions)
+            break
+          case 'ERROR':
+            console.error('Physics worker error:', payload)
+            break
+        }
+      }
+      
+      // Initialize the physics engine
+      sendWorkerMessage('INITIALIZE', {})
+      sendWorkerMessage('CREATE_TRUCK', { dimensions: truckDimensions })
+    }
+    
+    return () => {
+      if (workerRef.current) {
+        sendWorkerMessage('DESTROY', {})
+        workerRef.current.terminate()
+      }
+    }
+  }, [])
+
+  // Send message to worker
+  const sendWorkerMessage = (type: string, payload: any) => {
+    if (workerRef.current) {
+      const id = `msg_${messageIdRef.current++}`
+      workerRef.current.postMessage({ type, payload, id })
+      return id
+    }
+    return null
+  }
 
   // Physics calculations
   const calculateStabilityScore = () => {
@@ -68,20 +117,49 @@ export function PhysicsPanel() {
   }
 
   const runPhysicsSimulation = () => {
-    // Simulate different force scenarios
-    const accelerationResistance = calculateForceResistance(accelerationForce)
-    const brakingResistance = calculateForceResistance(brakingForce)
-    const turningResistance = calculateForceResistance(turningForce)
-
-    return {
-      acceleration: accelerationResistance > 0.3,
-      braking: brakingResistance > 0.6,
-      turning: turningResistance > 0.4,
+    if (!workerRef.current) return
+    
+    setIsSimulationRunning(true)
+    
+    // Add all boxes to physics simulation
+    boxes.forEach(box => {
+      sendWorkerMessage('ADD_BOX', { box })
+    })
+    
+    // Apply forces and start continuous simulation
+    const forces = {
+      acceleration: accelerationForce,
+      braking: brakingForce,
+      turning: turningForce,
+      gravity: gravityMultiplier
     }
+    
+    sendWorkerMessage('START_CONTINUOUS_SIMULATION', { forces })
   }
 
-  const physicsResults = runPhysicsSimulation()
-  const stabilityScore = calculateStabilityScore()
+  const stopPhysicsSimulation = () => {
+    if (!workerRef.current) return
+    
+    setIsSimulationRunning(false)
+    sendWorkerMessage('STOP_SIMULATION', {})
+  }
+
+  const findOptimalPlacement = () => {
+    if (!workerRef.current) return
+    
+    const constraints = {
+      truckDimensions,
+      maxWeight: 34000,
+      fragileZones: [],
+      temperatureZones: { cold: {}, frozen: {}, regular: {} },
+      lifoOrder: true,
+      perishableAreas: []
+    }
+    
+    sendWorkerMessage('FIND_OPTIMAL_PLACEMENT', { boxes, constraints })
+  }
+
+  const stabilityScore = physicsStats.stability
 
   return (
     <div className="space-y-4">
@@ -171,42 +249,44 @@ export function PhysicsPanel() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-300">Acceleration Test</span>
-              {physicsResults.acceleration ? (
-                <CheckCircle className="h-4 w-4 text-green-400" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-red-400" />
-              )}
+              <span className="text-gray-300">Collisions</span>
+              <span className="text-white">{physicsStats.collisions}</span>
             </div>
 
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-300">Braking Test</span>
-              {physicsResults.braking ? (
-                <CheckCircle className="h-4 w-4 text-green-400" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-red-400" />
-              )}
+              <span className="text-gray-300">Contacts</span>
+              <span className="text-white">{physicsStats.contacts}</span>
             </div>
 
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-300">Turning Test</span>
-              {physicsResults.turning ? (
-                <CheckCircle className="h-4 w-4 text-green-400" />
+              <span className="text-gray-300">Simulation Status</span>
+              {isSimulationRunning ? (
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-green-400">Running</span>
+                </div>
               ) : (
-                <AlertTriangle className="h-4 w-4 text-red-400" />
+                <span className="text-gray-400">Stopped</span>
               )}
             </div>
           </div>
 
-          <Button
-            className="w-full h-8 text-xs"
-            onClick={() => {
-              // Trigger physics simulation
-              console.log("Running physics simulation...", physicsResults)
-            }}
-          >
-            Run Simulation
-          </Button>
+          <div className="space-y-2">
+            <Button
+              className="w-full h-8 text-xs"
+              onClick={isSimulationRunning ? stopPhysicsSimulation : runPhysicsSimulation}
+              variant={isSimulationRunning ? "destructive" : "default"}
+            >
+              {isSimulationRunning ? "Stop Simulation" : "Run Simulation"}
+            </Button>
+            <Button
+              className="w-full h-8 text-xs"
+              onClick={findOptimalPlacement}
+              variant="outline"
+            >
+              Find Optimal Placement
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

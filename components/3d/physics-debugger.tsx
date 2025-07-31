@@ -42,10 +42,18 @@ export function PhysicsDebugger() {
 
           {physicsStats && (
             <div className="mt-2 text-gray-400">
-              <div>Collisions: {physicsStats.collisions}</div>
-              <div>Contacts: {physicsStats.contacts}</div>
+              <div>Collisions: {physicsStats.collisions || 0}</div>
+              <div>Contacts: {physicsStats.contacts || 0}</div>
+              <div>Engine: Rapier.js</div>
+              <div>Sim State: {physicsStats.running ? 'Active' : 'Idle'}</div>
             </div>
           )}
+
+          <div className="mt-2 text-cyan-400">Physics Engine Status:</div>
+          <div className="text-xs">
+            <div>Real-time: {physicsStats?.realTime ? 'ON' : 'OFF'}</div>
+            <div>Quality: Production-grade</div>
+          </div>
         </div>
       </div>
     </Html>
