@@ -1,4 +1,3 @@
-
 import type { Box } from '@/types/box'
 import type { PhysicsEngine } from './physics-engine'
 import { MCTSPlacementOptimizer } from './mcts-placement'
@@ -59,7 +58,7 @@ export class PlacementAlgorithm {
 
   private initializeSpatialGrid(): void {
     const { width, length, height } = this.constraints.truckDimensions
-    
+
     for (let x = -width/2; x < width/2; x += this.gridSize) {
       for (let y = 0; y < height; y += this.gridSize) {
         for (let z = -length/2; z < length/2; z += this.gridSize) {
@@ -92,7 +91,7 @@ export class PlacementAlgorithm {
 
   private async findOptimalPlacementsBatched(boxes: Box[]): Promise<Box[]> {
     console.log('🔄 Using batched placement optimization for large dataset...')
-    
+
     const batchSize = 20
     const allPlacedBoxes: Box[] = []
     const batches = this.createOptimizedBatches(boxes, batchSize)
@@ -100,22 +99,22 @@ export class PlacementAlgorithm {
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i]
       this.placementProgress = (i / batches.length) * 100
-      
+
       console.log(`📦 Processing batch ${i + 1}/${batches.length} (${batch.length} boxes)`)
-      
+
       // Use MCTS for smaller batches, heuristic for larger ones
       const batchResult = batch.length <= 15 
         ? await this.processBatchMCTS(batch, allPlacedBoxes)
         : await this.processBatchHeuristic(batch, allPlacedBoxes)
-      
+
       allPlacedBoxes.push(...batchResult)
-      
+
       // Update spatial grid
       this.updateSpatialGrid(batchResult)
-      
+
       // Trigger progress callback
       this.triggerProgressCallback(allPlacedBoxes, this.placementProgress)
-      
+
       // Allow other tasks to run
       await new Promise(resolve => setTimeout(resolve, 1))
     }
@@ -129,21 +128,21 @@ export class PlacementAlgorithm {
     // Sort boxes by priority first
     const sortedBoxes = this.sortBoxesByPriority(boxes)
     const batches: Box[][] = []
-    
+
     // Create balanced batches considering weight and size
     let currentBatch: Box[] = []
     let currentWeight = 0
     let currentVolume = 0
-    
+
     for (const box of sortedBoxes) {
       const boxWeight = box.weight
       const boxVolume = box.width * box.height * box.length
-      
+
       // Start new batch if current would exceed limits
       if ((currentBatch.length >= batchSize) || 
           (currentWeight + boxWeight > 8000) || // Weight limit per batch
           (currentVolume + boxVolume > 50)) {    // Volume limit per batch
-        
+
         if (currentBatch.length > 0) {
           batches.push(currentBatch)
           currentBatch = []
@@ -151,16 +150,16 @@ export class PlacementAlgorithm {
           currentVolume = 0
         }
       }
-      
+
       currentBatch.push(box)
       currentWeight += boxWeight
       currentVolume += boxVolume
     }
-    
+
     if (currentBatch.length > 0) {
       batches.push(currentBatch)
     }
-    
+
     return batches
   }
 
@@ -177,20 +176,20 @@ export class PlacementAlgorithm {
 
   private async processBatchHeuristic(batch: Box[], existingBoxes: Box[]): Promise<Box[]> {
     const placedBoxes: Box[] = []
-    
+
     for (const box of batch) {
       const optimalPosition = await this.findBestPositionOptimized(box, [...existingBoxes, ...placedBoxes])
       if (optimalPosition) {
         const placedBox = { ...box, position: optimalPosition }
         placedBoxes.push(placedBox)
-        
+
         // Update graph state
         this.graphEncoder.annotate(placedBox, optimalPosition)
       } else {
         console.warn(`⚠️ Could not place box ${box.id}`)
       }
     }
-    
+
     return placedBoxes
   }
 
@@ -213,10 +212,10 @@ export class PlacementAlgorithm {
 
   private async findBestPositionOptimized(box: Box, placedBoxes: Box[]): Promise<{ x: number; y: number; z: number } | null> {
     const candidates: Array<{ position: { x: number; y: number; z: number }; score: number }> = []
-    
+
     // Generate candidate positions using spatial optimization
     const candidatePositions = this.generateCandidatePositionsOptimized(box, placedBoxes)
-    
+
     for (const position of candidatePositions) {
       if (this.isValidPositionOptimized(box, position, placedBoxes)) {
         const score = await this.evaluatePositionDetailed(box, position, placedBoxes)
@@ -238,18 +237,18 @@ export class PlacementAlgorithm {
     const positions: Array<{ x: number; y: number; z: number }> = []
     const { width, length, height } = this.constraints.truckDimensions
     const stepSize = 0.25 // Finer grid for better placement
-    
+
     // Priority positions: floor positions first
     for (let x = -width/2 + box.width/2 + 0.1; x <= width/2 - box.width/2 - 0.1; x += stepSize) {
       for (let z = -length/2 + box.length/2 + 0.1; z <= length/2 - box.length/2 - 0.1; z += stepSize) {
         positions.push({ x, y: box.height/2, z })
       }
     }
-    
+
     // Stack positions: on top of existing boxes
     for (const placedBox of placedBoxes) {
       const stackY = placedBox.position.y + placedBox.height/2 + box.height/2 + 0.05 // Small gap
-      
+
       if (stackY + box.height/2 <= height - 0.1) {
         // Try positions centered on the placed box
         positions.push({
@@ -257,7 +256,7 @@ export class PlacementAlgorithm {
           y: stackY,
           z: placedBox.position.z
         })
-        
+
         // Try offset positions for better packing
         const offsets = [
           { x: placedBox.width/4, z: 0 },
@@ -265,11 +264,11 @@ export class PlacementAlgorithm {
           { x: 0, z: placedBox.length/4 },
           { x: 0, z: -placedBox.length/4 }
         ]
-        
+
         for (const offset of offsets) {
           const x = placedBox.position.x + offset.x
           const z = placedBox.position.z + offset.z
-          
+
           if (x - box.width/2 >= -width/2 + 0.1 && x + box.width/2 <= width/2 - 0.1 &&
               z - box.length/2 >= -length/2 + 0.1 && z + box.length/2 <= length/2 - 0.1) {
             positions.push({ x, y: stackY, z })
@@ -277,14 +276,14 @@ export class PlacementAlgorithm {
         }
       }
     }
-    
+
     return positions
   }
 
   private isValidPositionOptimized(box: Box, position: { x: number; y: number; z: number }, placedBoxes: Box[]): boolean {
     const { width, length, height } = this.constraints.truckDimensions
     const tolerance = 0.05 // 5cm tolerance
-    
+
     // Check truck boundaries with tolerance
     if (position.x - box.width/2 < -width/2 + tolerance ||
         position.x + box.width/2 > width/2 - tolerance ||
@@ -297,7 +296,7 @@ export class PlacementAlgorithm {
 
     // Optimized collision detection using spatial grid
     const nearbyBoxes = this.getNearbyBoxes(position, placedBoxes)
-    
+
     for (const otherBox of nearbyBoxes) {
       if (this.boxesCollideWithTolerance(box, position, otherBox, otherBox.position, tolerance)) {
         return false
@@ -345,7 +344,7 @@ export class PlacementAlgorithm {
   private calculateSupportArea(box: Box, position: { x: number; y: number; z: number }, placedBoxes: Box[]): number {
     let supportArea = 0
     const boxArea = box.width * box.length
-    
+
     for (const supportBox of placedBoxes) {
       // Check if support box is below and close enough
       if (Math.abs(supportBox.position.y + supportBox.height/2 - (position.y - box.height/2)) <= 0.1) {
@@ -353,7 +352,7 @@ export class PlacementAlgorithm {
         supportArea += overlapArea
       }
     }
-    
+
     return Math.min(1.0, supportArea / boxArea)
   }
 
@@ -422,7 +421,7 @@ export class PlacementAlgorithm {
 
   private getTemperatureZoneScore(box: Box, position: { x: number; y: number; z: number }): number {
     const { frozen, cold } = this.constraints.temperatureZones
-    
+
     // Check frozen zone compliance
     if (box.temperatureRequirement === 'frozen') {
       for (const zone of frozen) {
@@ -432,7 +431,7 @@ export class PlacementAlgorithm {
       }
       return -0.5 // Wrong zone penalty
     }
-    
+
     // Check cold zone compliance
     if (box.temperatureRequirement === 'cold') {
       for (const zone of cold) {
@@ -442,14 +441,14 @@ export class PlacementAlgorithm {
       }
       return -0.3 // Wrong zone penalty
     }
-    
+
     // Regular temperature - avoid temperature zones
     for (const zone of [...frozen, ...cold]) {
       if (this.positionInZone(position, zone)) {
         return -0.4 // Wrong zone penalty
       }
     }
-    
+
     return 0.5 // Regular zone
   }
 
@@ -464,20 +463,20 @@ export class PlacementAlgorithm {
     const radius = 2.0
     let nearbyVolume = 0
     let usedVolume = 0
-    
+
     for (const box of placedBoxes) {
       const distance = Math.sqrt(
         Math.pow(box.position.x - position.x, 2) +
         Math.pow(box.position.y - position.y, 2) +
         Math.pow(box.position.z - position.z, 2)
       )
-      
+
       if (distance <= radius) {
         nearbyVolume += radius * radius * radius // Simplified sphere volume
         usedVolume += box.width * box.height * box.length
       }
     }
-    
+
     return nearbyVolume > 0 ? usedVolume / nearbyVolume : 0.5
   }
 
@@ -511,14 +510,14 @@ export class PlacementAlgorithm {
     for (let i = 0; i < sortedBoxes.length; i++) {
       const box = sortedBoxes[i]
       this.placementProgress = (i / sortedBoxes.length) * 100
-      
+
       const optimalPosition = await this.findBestPositionOptimized(box, placedBoxes)
       if (optimalPosition) {
         const placedBox = { ...box, position: optimalPosition }
         placedBoxes.push(placedBox)
         this.graphEncoder.annotate(placedBox, optimalPosition)
       }
-      
+
       // Trigger progress callback
       if (i % 5 === 0) { // Update every 5 boxes
         this.triggerProgressCallback(placedBoxes, this.placementProgress)
@@ -574,4 +573,37 @@ export class PlacementAlgorithm {
   getProgress(): number {
     return this.placementProgress
   }
+
+  // Test method for validation
+  public testPlacement(): void {
+    console.log('🧪 Testing placement algorithm...')
+
+    console.log('Truck dimensions:', this.constraints.truckDimensions)
+
+    const testBox: Box = {
+      id: 'test-001',
+      width: 1.0,
+      height: 1.0,
+      length: 1.0,
+      weight: 10,
+      position: { x: 0, y: 0, z: 0 },
+      isFragile: false,
+      temperatureRequirement: 'regular',
+      destination: 'Stop 1',
+      category: 'General',
+      isNew: false
+    }
+
+    this.findBestPositionOptimized(testBox, []).then(position => {
+      console.log('Test box placement result:', position)
+
+      if (position) {
+        const isValid = this.isValidPositionOptimized(testBox, position, [])
+        console.log('Position validation result:', isValid)
+      }
+    })
+  }
 }
+
+// Auto-test when algorithm loads
+console.log('🔧 PlacementAlgorithm module loaded - running self-test...')

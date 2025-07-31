@@ -2,34 +2,39 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config, { isServer }) => {
-    // Fix WASM loading issues
+    // Handle WASM files
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
       syncWebAssembly: true,
     }
 
-    // Handle WASM files properly
+    // Add WASM file handling
     config.module.rules.push({
       test: /\.wasm$/,
       type: 'webassembly/async',
     })
 
-    // Fix for rapier physics engine
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        path: false,
-      }
-    }
+    // Handle worker files
+    config.module.rules.push({
+      test: /\.worker\.(js|ts)$/,
+      use: {
+        loader: 'worker-loader',
+        options: {
+          name: 'static/[hash].worker.js',
+          publicPath: '/_next/',
+        },
+      },
+    })
+
+    // Don't parse RAPIER WASM files
+    config.module.noParse = /rapier_wasm.*\.wasm$/
 
     return config
   },
-  
-  // Enable experimental features for better WASM support
+  // Remove the problematic esmExternals configuration
   experimental: {
-    esmExternals: 'loose',
+    // Keep other experimental features but remove esmExternals
   },
 }
 

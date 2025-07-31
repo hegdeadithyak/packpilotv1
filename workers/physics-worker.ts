@@ -1,271 +1,172 @@
-
-import { PhysicsEngine } from '../lib/physics-engine'
-import { PlacementAlgorithm, PlacementConstraints } from '../lib/placement-algorithm'
+import PhysicsEngine from '../lib/physics-engine'
 import type { Box } from '../types/box'
 
-interface WorkerMessage {
-  type: string
-  payload: any
-  id: string
-}
+let physicsEngine: PhysicsEngine | null = null
+let isInitialized = false
 
-interface WorkerResponse {
-  type: string
-  payload: any
-  id: string
-}
+self.onmessage = async (event) => {
+  const { type, payload, id } = event.data
 
-class PhysicsWorker {
-  private engine: PhysicsEngine
-  private algorithm: PlacementAlgorithm | null = null
-  private isRunning = false
-  private simulationInterval: number | null = null
+  try {
+    switch (type) {
+      case 'INITIALIZE':
+        await initializePhysics()
+        break
 
-  constructor() {
-    this.engine = new PhysicsEngine()
-  }
+      case 'CREATE_TRUCK':
+        if (physicsEngine && payload.dimensions) {
+          physicsEngine.createTruckContainer(payload.dimensions)
+          self.postMessage({ type: 'TRUCK_CREATED', payload: {}, id })
+        }
+        break
 
-  async handleMessage(message: WorkerMessage): Promise<WorkerResponse> {
-    try {
-      switch (message.type) {
-        case 'INITIALIZE':
-          await this.engine.initialize()
-          return {
-            type: 'INITIALIZED',
-            payload: { success: true },
-            id: message.id
-          }
+      case 'ADD_BOX':
+        if (physicsEngine && payload.box) {
+          physicsEngine.addBox(payload.box)
+          self.postMessage({ type: 'BOX_ADDED', payload: { boxId: payload.box.id }, id })
+        }
+        break
 
-        case 'CREATE_TRUCK':
-          this.engine.createTruckContainer(message.payload.dimensions)
-          return {
-            type: 'TRUCK_CREATED',
-            payload: { success: true },
-            id: message.id
-          }
+      case 'START_CONTINUOUS_SIMULATION':
+        if (physicsEngine) {
+          startContinuousSimulation(payload.forces || {})
+        }
+        break
 
-        case 'ADD_BOX':
-          this.engine.addBox(message.payload.box)
-          return {
-            type: 'BOX_ADDED',
-            payload: { success: true, boxId: message.payload.box.id },
-            id: message.id
-          }
+      case 'STOP_SIMULATION':
+        stopContinuousSimulation()
+        break
 
-        case 'REMOVE_BOX':
-          this.engine.removeBox(message.payload.boxId)
-          return {
-            type: 'BOX_REMOVED',
-            payload: { success: true, boxId: message.payload.boxId },
-            id: message.id
-          }
+      case 'APPLY_FORCE_EVENT':
+        if (physicsEngine) {
+          const forces = { acceleration: 0, braking: 0, turning: 0, gravity: 1.0 }
+          forces[payload.forceType as keyof typeof forces] = payload.magnitude
+          physicsEngine.applyForces(forces)
 
-        case 'APPLY_FORCES':
-          this.engine.applyForces(message.payload.forces)
-          return {
-            type: 'FORCES_APPLIED',
-            payload: { success: true },
-            id: message.id
-          }
-
-        case 'APPLY_FORCE_EVENT':
-          const { forceType, magnitude } = message.payload
-          const eventForces = {
-            acceleration: forceType === 'acceleration' ? magnitude : 0,
-            braking: forceType === 'braking' ? magnitude : 0,
-            turning: forceType === 'turning' ? magnitude : 0,
-            gravity: 1.0
-          }
-          this.engine.applyForces(eventForces)
-          
-          // Apply force for short duration
+          // Run simulation for a short duration
           setTimeout(() => {
-            this.engine.applyForces({ acceleration: 0, braking: 0, turning: 0, gravity: 1.0 })
-          }, 500)
-          
-          return {
-            type: 'FORCE_EVENT_APPLIED',
-            payload: { success: true, forceType, magnitude },
-            id: message.id
-          }
+            if (physicsEngine) {
+              const stats = physicsEngine.step()
+              self.postMessage({ type: 'SIMULATION_UPDATE', payload: { stats }, id })
+            }
+          }, 100)
+        }
+        break
 
-        case 'START_CONTINUOUS_SIMULATION':
-          this.startContinuousSimulation(message.payload.forces)
-          return {
-            type: 'SIMULATION_STARTED',
-            payload: { success: true },
-            id: message.id
-          }
+      case 'FIND_OPTIMAL_PLACEMENT':
+        await findOptimalPlacement(payload.boxes, payload.constraints)
+        break
 
-        case 'STOP_SIMULATION':
-          this.stopSimulation()
-          return {
-            type: 'SIMULATION_STOPPED',
-            payload: { success: true },
-            id: message.id
-          }
+      case 'DESTROY':
+        if (physicsEngine) {
+          physicsEngine.destroy()
+          physicsEngine = null
+          isInitialized = false
+        }
+        break
 
-        case 'STEP_SIMULATION':
-          const deltaTime = message.payload.deltaTime || 1/60
-          const stats = this.engine.step(deltaTime)
-          const boxData = this.engine.getBoxData()
-          
-          return {
-            type: 'SIMULATION_STEP',
-            payload: { stats, boxData },
-            id: message.id
-          }
-
-        case 'FIND_OPTIMAL_PLACEMENT':
-          return await this.findOptimalPlacement(message.payload)
-
-        case 'GET_BOX_DATA':
-          const currentBoxData = this.engine.getBoxData()
-          return {
-            type: 'BOX_DATA',
-            payload: { boxData: currentBoxData },
-            id: message.id
-          }
-
-        case 'DESTROY':
-          this.destroy()
-          return {
-            type: 'DESTROYED',
-            payload: { success: true },
-            id: message.id
-          }
-
-        default:
-          throw new Error(`Unknown message type: ${message.type}`)
-      }
-    } catch (error) {
-      return {
-        type: 'ERROR',
-        payload: { 
-          error: error instanceof Error ? error.message : 'Unknown error',
-          originalType: message.type 
-        },
-        id: message.id
-      }
+      default:
+        console.warn('Unknown message type:', type)
     }
+  } catch (error) {
+    console.error('Physics worker error:', error)
+    self.postMessage({ type: 'ERROR', payload: { error: error.message }, id })
   }
+}
 
-  private startContinuousSimulation(forces: any): void {
-    if (this.isRunning) {
-      this.stopSimulation()
-    }
+async function initializePhysics() {
+  try {
+    console.log('🔧 Initializing physics engine in worker...')
+    physicsEngine = new PhysicsEngine()
+    await physicsEngine.initialize()
+    isInitialized = true
 
-    this.isRunning = true
-    this.engine.startContinuousSimulation()
+    self.postMessage({ 
+      type: 'PHYSICS_INITIALIZED', 
+      payload: { success: true }, 
+      id: 'init' 
+    })
+    console.log('✅ Physics engine initialized in worker')
+  } catch (error) {
+    console.error('❌ Failed to initialize physics in worker:', error)
+    self.postMessage({ 
+      type: 'ERROR', 
+      payload: { error: error.message }, 
+      id: 'init' 
+    })
+  }
+}
 
-    // Apply initial forces
-    if (forces) {
-      this.engine.applyForces(forces)
-    }
+let simulationInterval: NodeJS.Timeout | null = null
 
-    // Start simulation loop
-    this.simulationInterval = setInterval(() => {
-      if (!this.isRunning) return
+function startContinuousSimulation(forces: any) {
+  if (!physicsEngine || !isInitialized) return
 
-      const stats = this.engine.step(1/60) // 60 FPS
-      const boxData = this.engine.getBoxData()
+  stopContinuousSimulation() // Stop any existing simulation
 
-      // Send update to main thread
+  simulationInterval = setInterval(() => {
+    if (physicsEngine) {
+      // Apply forces if provided
+      if (forces) {
+        physicsEngine.applyForces(forces)
+      }
+
+      // Step the simulation
+      const stats = physicsEngine.step()
+
+      // Get updated positions
+      const positions = physicsEngine.getBoxPositions()
+
+      // Send update
       self.postMessage({
         type: 'SIMULATION_UPDATE',
         payload: {
           stats,
-          boxData,
-          timestamp: Date.now()
+          positions: Array.from(positions.entries()).map(([id, pos]) => ({ id, position: pos }))
         },
-        id: 'continuous_update'
+        id: 'continuous'
       })
-
-      // Re-apply forces if still active
-      if (forces && (forces.acceleration > 0.1 || forces.braking > 0.1 || forces.turning > 0.1)) {
-        this.engine.applyForces(forces)
-      }
-
-    }, 16) // ~60 FPS
-  }
-
-  private stopSimulation(): void {
-    this.isRunning = false
-    this.engine.stopSimulation()
-
-    if (this.simulationInterval) {
-      clearInterval(this.simulationInterval)
-      this.simulationInterval = null
     }
-  }
+  }, 16) // ~60 FPS
+}
 
-  private async findOptimalPlacement(payload: any): Promise<WorkerResponse> {
-    try {
-      const { boxes, constraints } = payload
-
-      // Initialize algorithm if not exists
-      if (!this.algorithm) {
-        this.algorithm = new PlacementAlgorithm(this.engine, constraints)
-      }
-
-      // Progress callback
-      this.algorithm.onPlacementUpdate((placedBoxes, progress) => {
-        self.postMessage({
-          type: 'PLACEMENT_PROGRESS',
-          payload: {
-            placedBoxes,
-            progress,
-            total: boxes.length
-          },
-          id: 'placement_progress'
-        })
-      })
-
-      // Find optimal placements
-      const optimizedBoxes = await this.algorithm.findOptimalPlacements(boxes)
-
-      return {
-        type: 'OPTIMAL_PLACEMENT_FOUND',
-        payload: {
-          solutions: optimizedBoxes,
-          stats: {
-            totalBoxes: boxes.length,
-            placedBoxes: optimizedBoxes.length,
-            efficiency: (optimizedBoxes.length / boxes.length) * 100
-          }
-        },
-        id: 'placement_result'
-      }
-
-    } catch (error) {
-      throw new Error(`Placement optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
-  }
-
-  private destroy(): void {
-    this.stopSimulation()
-    this.engine.destroy()
-    this.algorithm = null
+function stopContinuousSimulation() {
+  if (simulationInterval) {
+    clearInterval(simulationInterval)
+    simulationInterval = null
   }
 }
 
-// Initialize worker
-const worker = new PhysicsWorker()
+async function findOptimalPlacement(boxes: Box[], constraints: any) {
+  try {
+    // Import placement algorithm
+    const { PlacementAlgorithm } = await import('../lib/placement-algorithm')
 
-// Handle messages from main thread
-self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const response = await worker.handleMessage(event.data)
-  self.postMessage(response)
+    console.log('🧠 Starting MCTS-based placement optimization in worker...')
+
+    const algorithm = new PlacementAlgorithm(constraints)
+    const optimizedBoxes = await algorithm.findOptimalPlacement(boxes)
+
+    self.postMessage({
+      type: 'OPTIMAL_PLACEMENT_FOUND',
+      payload: {
+        solutions: optimizedBoxes,
+        stats: {
+          totalBoxes: boxes.length,
+          placedBoxes: optimizedBoxes.length,
+          successRate: (optimizedBoxes.length / boxes.length) * 100
+        }
+      },
+      id: 'placement'
+    })
+
+    console.log(`✅ Placement optimization complete: ${optimizedBoxes.length}/${boxes.length} boxes placed`)
+  } catch (error) {
+    console.error('❌ Placement optimization failed:', error)
+    self.postMessage({
+      type: 'ERROR',
+      payload: { error: error.message },
+      id: 'placement'
+    })
+  }
 }
-
-// Handle worker errors
-self.onerror = (error) => {
-  console.error('Physics worker error:', error)
-  self.postMessage({
-    type: 'ERROR',
-    payload: { error: 'Worker error occurred' },
-    id: 'worker_error'
-  })
-}
-
-export {}

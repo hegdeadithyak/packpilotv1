@@ -48,6 +48,13 @@ interface OptimizationState {
     searchTime: number
     stateTransitions: number
   } | null
+
+  // Actions
+  runSimulation: () => void
+  stopSimulation: () => void
+  resetSimulation: () => void
+  setSimulationSpeed: (speed: number) => void
+  setSimulationForces: (forces: SimulationForces) => void
 }
 
 export const useOptimizationStore = create<OptimizationState>((set, get) => ({
@@ -58,6 +65,15 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
     height: 9,
   },
   physicsEnabled: true,
+  physicsStats: null,
+  isSimulationRunning: false,
+  simulationSpeed: 1.0,
+  simulationForces: {
+    acceleration: 0.4,
+    braking: 0.8,
+    turning: 0.5,
+    gravity: 1.0,
+  },
   stabilityScore: 0,
   safetyScore: 0,
   optimizationScore: 0,
