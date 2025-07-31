@@ -151,12 +151,36 @@ export function PhysicsPanel() {
       truckDimensions,
       maxWeight: 34000,
       fragileZones: [],
-      temperatureZones: { cold: {}, frozen: {}, regular: {} },
+      temperatureZones: { 
+        cold: [{ x: -2, y: 1, z: -4, width: 3, height: 2, length: 2 }], 
+        frozen: [{ x: 2, y: 1, z: -4, width: 3, height: 2, length: 2 }], 
+        regular: [] 
+      },
       lifoOrder: true,
       perishableAreas: []
     }
     
     sendWorkerMessage('FIND_OPTIMAL_PLACEMENT', { boxes, constraints })
+  }
+
+  const testSpecificForce = (forceType: string, magnitude: number) => {
+    if (!workerRef.current) return
+    
+    sendWorkerMessage('APPLY_FORCE_EVENT', { forceType, magnitude })
+  }
+
+  const simulateEmergencyScenario = () => {
+    if (!workerRef.current) return
+    
+    // Apply emergency braking scenario
+    const emergencyForces = {
+      acceleration: 0,
+      braking: 1.5,
+      turning: 0.8,
+      gravity: 1.2
+    }
+    
+    sendWorkerMessage('START_CONTINUOUS_SIMULATION', { forces: emergencyForces })
   }
 
   const stabilityScore = physicsStats.stability
@@ -284,8 +308,47 @@ export function PhysicsPanel() {
               onClick={findOptimalPlacement}
               variant="outline"
             >
-              Find Optimal Placement
+              Find Optimal Placement (RL)
             </Button>
+          </div>
+
+          {/* Force Testing Section */}
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-300">Force Testing</Label>
+            <div className="grid grid-cols-2 gap-1">
+              <Button
+                className="h-6 text-xs"
+                onClick={() => testSpecificForce('braking', brakingForce)}
+                variant="outline"
+                size="sm"
+              >
+                Test Brake
+              </Button>
+              <Button
+                className="h-6 text-xs"
+                onClick={() => testSpecificForce('turning', turningForce)}
+                variant="outline"
+                size="sm"
+              >
+                Test Turn
+              </Button>
+              <Button
+                className="h-6 text-xs"
+                onClick={() => testSpecificForce('acceleration', accelerationForce)}
+                variant="outline"
+                size="sm"
+              >
+                Test Accel
+              </Button>
+              <Button
+                className="h-6 text-xs"
+                onClick={() => simulateEmergencyScenario()}
+                variant="destructive"
+                size="sm"
+              >
+                Emergency
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

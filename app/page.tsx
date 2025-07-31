@@ -9,6 +9,7 @@ import { BoxManager } from "@/components/box-manager"
 import { PhysicsPanel } from "@/components/physics-panel"
 import { ReportGenerator } from "@/components/report-generator"
 import { PerformanceMonitor } from "@/components/performance-monitor"
+import { StatusPanel } from "@/components/status-panel"
 import { ScoreDisplay } from "@/components/score-display"
 import { SimulationControls } from "@/components/simulation-controls"
 import { useOptimizationStore } from "@/store/optimization-store"
@@ -245,6 +246,9 @@ export default function WalmartTruckOptimizer() {
           </div>
         </div>
       </div>
+      
+      {/* Status Panel - Non-intrusive floating panel */}
+      <StatusPanel />
     </div>
   )
 }

@@ -146,22 +146,52 @@ export class PhysicsEngine {
   }): void {
     if (!this.world) return
 
-    // Apply vehicle dynamics forces to all boxes
+    // Apply vehicle dynamics forces to all boxes with realistic magnitude
     this.bodies.forEach((body, boxId) => {
-      // Acceleration/braking force (forward/backward)
-      const forwardForce = forces.acceleration * body.mass() * 9.81
-      body.addForce({ x: 0, y: 0, z: -forwardForce }, true)
+      const mass = body.mass()
+      const position = body.translation()
+      
+      // Acceleration/braking force (forward/backward) - increased magnitude for visibility
+      const accelerationMagnitude = forces.acceleration * mass * 15.0 // Increased from 9.81
+      const brakingMagnitude = forces.braking * mass * 20.0 // Even stronger braking
+      
+      if (forces.acceleration > 0.1) {
+        body.addForce({ x: 0, y: 0, z: -accelerationMagnitude }, true)
+        // Add slight upward force to simulate weight transfer
+        body.addForce({ x: 0, y: mass * 2.0, z: 0 }, true)
+      }
+      
+      if (forces.braking > 0.1) {
+        body.addForce({ x: 0, y: 0, z: brakingMagnitude }, true)
+        // Forward weight transfer
+        body.addForce({ x: 0, y: -mass * 1.5, z: 0 }, true)
+      }
 
-      // Turning force (lateral)
-      const lateralForce = forces.turning * body.mass() * 9.81
-      body.addForce({ x: lateralForce, y: 0, z: 0 }, true)
+      // Turning force (lateral) - with centrifugal effect based on height
+      const heightMultiplier = Math.max(1.0, position.y / 2.0) // Higher boxes tip more
+      const turningMagnitude = forces.turning * mass * 12.0 * heightMultiplier
+      
+      if (forces.turning > 0.1) {
+        body.addForce({ x: turningMagnitude, y: 0, z: 0 }, true)
+        // Add rotational torque for tipping effect
+        body.addTorque({ x: 0, y: 0, z: turningMagnitude * 0.5 }, true)
+      }
+
+      // Apply air resistance to prevent infinite acceleration
+      const velocity = body.linvel()
+      const dampingForce = {
+        x: -velocity.x * mass * 0.1,
+        y: -velocity.y * mass * 0.05,
+        z: -velocity.z * mass * 0.1
+      }
+      body.addForce(dampingForce, true)
     })
 
-    // Update gravity
+    // Update gravity with enhanced effect
     this.setGravity({
-      x: 0,
-      y: -9.81 * forces.gravity,
-      z: 0
+      x: forces.turning * 2.0, // Lateral gravity during turns
+      y: -9.81 * forces.gravity * 1.5, // Enhanced gravity effect
+      z: forces.acceleration * 1.5 - forces.braking * 2.0 // Forward/backward pseudo-gravity
     })
   }
 

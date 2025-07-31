@@ -95,6 +95,22 @@ class PhysicsWorker {
             id: message.id
           }
 
+        case 'APPLY_FORCE_EVENT':
+          const forceResult = this.applySpecificForce(message.payload.forceType, message.payload.magnitude)
+          return {
+            type: 'FORCE_EVENT_APPLIED',
+            payload: forceResult,
+            id: message.id
+          }
+
+        case 'GET_STATE_TRANSITION':
+          const stateData = this.getCurrentStateData()
+          return {
+            type: 'STATE_TRANSITION_DATA',
+            payload: stateData,
+            id: message.id
+          }
+
         case 'STOP_SIMULATION':
           this.isRunning = false
           return {
@@ -126,6 +142,7 @@ class PhysicsWorker {
 
   private startContinuousSimulation(forces: any, requestId: string): void {
     this.isRunning = true
+    let frameCount = 0
     
     const simulate = () => {
       if (!this.isRunning) return
@@ -134,18 +151,86 @@ class PhysicsWorker {
       const stats = this.engine.step(1/60) // 60 FPS
       const boxData = this.engine.getBoxData()
       
-      // Send update to main thread
+      frameCount++
+      
+      // Send update to main thread with enhanced data
       self.postMessage({
         type: 'SIMULATION_UPDATE',
-        payload: { stats, boxData },
+        payload: { 
+          stats: {
+            ...stats,
+            frameCount,
+            running: this.isRunning,
+            realTime: true
+          }, 
+          boxData,
+          forces: forces,
+          timestamp: Date.now()
+        },
         id: requestId
       })
+      
+      // Detect significant events
+      if (stats.collisions > 0) {
+        self.postMessage({
+          type: 'COLLISION_EVENT',
+          payload: { collisions: stats.collisions, frameCount },
+          id: requestId
+        })
+      }
+      
+      if (stats.stability < 50) {
+        self.postMessage({
+          type: 'STABILITY_WARNING',
+          payload: { stability: stats.stability, frameCount },
+          id: requestId
+        })
+      }
       
       // Continue simulation
       setTimeout(simulate, 1000/60) // 60 FPS
     }
     
     simulate()
+  }
+
+  private applySpecificForce(forceType: string, magnitude: number): any {
+    if (!this.engine) return { success: false, error: 'Engine not initialized' }
+    
+    const forceConfig = {
+      acceleration: forceType === 'acceleration' ? magnitude : 0,
+      braking: forceType === 'braking' ? magnitude : 0,
+      turning: forceType === 'turning' ? magnitude : 0,
+      gravity: 1.0
+    }
+    
+    this.engine.applyForces(forceConfig)
+    
+    return {
+      success: true,
+      forceType,
+      magnitude,
+      appliedAt: Date.now()
+    }
+  }
+
+  private getCurrentStateData(): any {
+    if (!this.engine) return { success: false }
+    
+    const boxData = this.engine.getBoxData()
+    const stateSignature = Array.from(boxData.values()).map(box => ({
+      id: box.id,
+      position: box.position,
+      velocity: box.velocity,
+      isStable: box.isStable
+    }))
+    
+    return {
+      success: true,
+      stateSignature,
+      boxCount: boxData.size,
+      timestamp: Date.now()
+    }
   }
 }
 
