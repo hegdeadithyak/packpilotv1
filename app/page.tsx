@@ -1,21 +1,21 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { WorkspaceSelector } from "@/components/workspace-selector"
-import { TruckVisualization } from "@/components/truck-visualization"
-import { MapVisualization } from "@/components/map-visualization"
-import { ControlPanel } from "@/components/control-panel"
-import { BoxManager } from "@/components/box-manager"
-import { PhysicsPanel } from "@/components/physics-panel"
-import { ReportGenerator } from "@/components/report-generator"
-import { PerformanceMonitor } from "@/components/performance-monitor"
-import { StatusPanel } from "@/components/status-panel"
-import { ScoreDisplay } from "@/components/score-display"
-import { SimulationControls } from "@/components/simulation-controls"
-import { useOptimizationStore } from "@/store/optimization-store"
-import { useWorkspaceStore } from "@/store/workspace-store"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useEffect } from "react";
+import { WorkspaceSelector } from "@/components/workspace-selector";
+import { TruckVisualization } from "@/components/truck-visualization";
+import MapVisualization from "@/components/map-visualization";
+import { ControlPanel } from "@/components/control-panel";
+import { BoxManager } from "@/components/box-manager";
+import { PhysicsPanel } from "@/components/physics-panel";
+import { ReportGenerator } from "@/components/report-generator";
+import { PerformanceMonitor } from "@/components/performance-monitor";
+import { StatusPanel } from "@/components/status-panel";
+import { ScoreDisplay } from "@/components/score-display";
+import { SimulationControls } from "@/components/simulation-controls";
+import { useOptimizationStore } from "@/store/optimization-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck,
   Package,
@@ -27,13 +27,15 @@ import {
   Map,
   ChevronLeft,
   ChevronRight,
-} from "lucide-react"
+} from "lucide-react";
 
 export default function WalmartTruckOptimizer() {
   // ───────────────────────── state ─────────────────────────
-  const [activeView, setActiveView] = useState<"3d" | "2d" | "hybrid" | "map">("3d")
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(true)
+  const [activeView, setActiveView] = useState<"3d" | "2d" | "hybrid" | "map">(
+    "3d",
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(true);
 
   // ───────────────────────── stores ─────────────────────────
   const {
@@ -46,35 +48,43 @@ export default function WalmartTruckOptimizer() {
     initializePhysics,
     runSimulation,
     stopSimulation,
-  } = useOptimizationStore()
+  } = useOptimizationStore();
 
-  const { currentWorkspace, saveWorkspace } = useWorkspaceStore()
+  const { currentWorkspace, saveWorkspace } = useWorkspaceStore();
 
   // ───────────────────────── life-cycle ─────────────────────────
   useEffect(() => {
-    initializePhysics()
-  }, [initializePhysics])
+    initializePhysics();
+  }, [initializePhysics]);
 
   // ───────────────────────── derived metrics ─────────────────────────
-  const totalWeight = boxes.reduce((s, b) => s + b.weight, 0)
-  const totalVolume = boxes.reduce((s, b) => s + b.width * b.height * b.length, 0)
-  const truckVolume = truckDimensions.width * truckDimensions.length * truckDimensions.height
-  const volumeUtilization = (totalVolume / truckVolume) * 100
-  const weightUtilization = (totalWeight / 34_000) * 100
+  const totalWeight = boxes.reduce((s, b) => s + b.weight, 0);
+  const totalVolume = boxes.reduce(
+    (s, b) => s + b.width * b.height * b.length,
+    0,
+  );
+  const truckVolume =
+    truckDimensions.width * truckDimensions.length * truckDimensions.height;
+  const volumeUtilization = (totalVolume / truckVolume) * 100;
+  const weightUtilization = (totalWeight / 34_000) * 100;
 
   // ───────────────────────── actions ─────────────────────────
   const handleSaveWorkspace = () => {
-    if (!currentWorkspace) return
+    if (!currentWorkspace) return;
     saveWorkspace(currentWorkspace.id, {
       ...currentWorkspace,
       boxes,
       truckDimensions,
       lastModified: new Date().toISOString(),
-    })
-  }
+    });
+  };
 
   if (showWorkspaceSelector) {
-    return <WorkspaceSelector onWorkspaceSelected={() => setShowWorkspaceSelector(false)} />
+    return (
+      <WorkspaceSelector
+        onWorkspaceSelected={() => setShowWorkspaceSelector(false)}
+      />
+    );
   }
 
   return (
@@ -89,7 +99,8 @@ export default function WalmartTruckOptimizer() {
               <div>
                 <h1 className="text-2xl font-bold">PackPilot</h1>
                 <p className="text-sm text-primary">
-                  {currentWorkspace?.name || "Advanced Physics-Based Warehouse Management System"}
+                  {currentWorkspace?.name ||
+                    "Advanced Physics-Based Warehouse Management System"}
                 </p>
               </div>
             </div>
@@ -102,11 +113,19 @@ export default function WalmartTruckOptimizer() {
                 optimizationScore={optimizationScore}
               />
               <div className="flex items-center space-x-2">
-                <Button variant="outline" size="sm" onClick={handleSaveWorkspace}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveWorkspace}
+                >
                   <Save className="h-4 w-4 mr-1" />
                   Save
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowWorkspaceSelector(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowWorkspaceSelector(true)}
+                >
                   Switch Workspace
                 </Button>
               </div>
@@ -131,8 +150,14 @@ export default function WalmartTruckOptimizer() {
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="w-full justify-start text-primary hover:bg-primary/10"
             >
-              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-              {!sidebarCollapsed && <span className="ml-2">Collapse Panel</span>}
+              {sidebarCollapsed ? (
+                <ChevronRight className="h-4 w-4" />
+              ) : (
+                <ChevronLeft className="h-4 w-4" />
+              )}
+              {!sidebarCollapsed && (
+                <span className="ml-2">Collapse Panel</span>
+              )}
             </Button>
           </div>
 
@@ -229,7 +254,9 @@ export default function WalmartTruckOptimizer() {
                 {isSimulationRunning && (
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                    <span className="text-red-400 font-bold">SIMULATION ACTIVE</span>
+                    <span className="text-red-400 font-bold">
+                      SIMULATION ACTIVE
+                    </span>
                   </div>
                 )}
               </div>
@@ -246,9 +273,9 @@ export default function WalmartTruckOptimizer() {
           </div>
         </div>
       </div>
-      
+
       {/* Status Panel - Non-intrusive floating panel */}
       <StatusPanel />
     </div>
-  )
+  );
 }
