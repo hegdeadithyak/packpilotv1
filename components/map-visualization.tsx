@@ -5,171 +5,409 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useOptimizationStore } from "@/store/optimization-store"
-import { Route, Navigation, AlertTriangle, Loader2, Search, Warehouse, Store } from "lucide-react"
+import {
+  Route,
+  Navigation,
+  AlertTriangle,
+  Loader2,
+  Search,
+  Store,
+  MapPin,
+  Clock,
+  Car,
+  Shuffle,
+  Warehouse,
+  Thermometer,
+  CloudSun,
+  ToggleLeft,
+  ToggleRight,
+  Truck,
+} from "lucide-react"
 
-// Real Walmart store locations across the US
-const walmartStores = [
+// Real Walmart Distribution Center as warehouse origin
+const warehouseLocation = {
+  id: "warehouse",
+  name: "Walmart Distribution Center #6094",
+  address: "24555 Katy Freeway, Katy, TX 77494",
+  coordinates: { lat: 29.7604, lng: -95.689 },
+  type: "warehouse" as const,
+}
+
+// Real Walmart store locations in Texas/Southwest region for realistic routing
+const walmartStorePool = [
   {
-    id: "warehouse",
-    name: "Walmart Distribution Center",
-    address: "1940 Argentia Road, Mississauga, ON L5N 1P9",
-    coordinates: [-76.6413, 39.0458], // [lng, lat] for OpenRouteService
-    type: "warehouse",
-    priority: 0,
+    id: "walmart_1",
+    name: "Walmart Supercenter #5260",
+    address: "2425 East Pioneer Parkway, Arlington, TX 76010",
+    coordinates: { lat: 32.7074, lng: -97.0682 },
+    placeId: "ChIJhRMHnlWZToYRqHKFOjAKXA8",
   },
   {
-    id: "stop1",
-    name: "Walmart Supercenter #1521",
-    address: "1521 E Baseline Rd, Phoenix, AZ 85042",
-    coordinates: [-112.074, 33.4484],
-    type: "store",
-    priority: 1,
+    id: "walmart_2",
+    name: "Walmart Supercenter #1349",
+    address: "8555 Preston Road, Frisco, TX 75034",
+    coordinates: { lat: 33.129, lng: -96.8236 },
+    placeId: "ChIJN0nKjv3tTIYRoKqVOmQKrA0",
   },
   {
-    id: "stop2",
-    name: "Walmart Supercenter #2500",
-    address: "2500 W Happy Valley Rd, Phoenix, AZ 85085",
-    coordinates: [-112.1401, 33.6839],
-    type: "store",
-    priority: 2,
+    id: "walmart_3",
+    name: "Walmart Supercenter #3052",
+    address: "1405 East Belt Line Road, Richardson, TX 75081",
+    coordinates: { lat: 32.9581, lng: -96.6989 },
+    placeId: "ChIJ8b8HLvK7SIYRnQJVOkQHbN2",
   },
   {
-    id: "stop3",
-    name: "Walmart Supercenter #3721",
-    address: "3721 E Thomas Rd, Phoenix, AZ 85018",
-    coordinates: [-111.9981, 33.4806],
-    type: "store",
-    priority: 3,
+    id: "walmart_4",
+    name: "Walmart Supercenter #1329",
+    address: "13750 East Northwest Highway, Dallas, TX 75244",
+    coordinates: { lat: 32.9247, lng: -96.7702 },
+    placeId: "ChIJ7a5Hj6M7SIYRPLsVLmAWcK9",
   },
   {
-    id: "stop4",
-    name: "Walmart Supercenter #1955",
-    address: "1955 W Baseline Rd, Mesa, AZ 85202",
-    coordinates: [-111.8431, 33.3783],
-    type: "store",
-    priority: 4,
+    id: "walmart_5",
+    name: "Walmart Supercenter #1800",
+    address: "3500 Texas Highway 6, Sugar Land, TX 77478",
+    coordinates: { lat: 29.5997, lng: -95.6394 },
+    placeId: "ChIJQyFHdkW8QIYRtLsVKnAFcQ3",
+  },
+  {
+    id: "walmart_6",
+    name: "Walmart Supercenter #2705",
+    address: "1521 South Loop 336 West, Conroe, TX 77304",
+    coordinates: { lat: 30.2849, lng: -95.456 },
+    placeId: "ChIJRyHnfEW2QIYRqMsVJoAHdR8",
+  },
+  {
+    id: "walmart_7",
+    name: "Walmart Supercenter #3412",
+    address: "19720 Northwest Freeway, Houston, TX 77065",
+    coordinates: { lat: 29.8688, lng: -95.5643 },
+    placeId: "ChIJTyJnhEX3QIYRsNsVNoAIdU4",
+  },
+  {
+    id: "walmart_8",
+    name: "Walmart Supercenter #1002",
+    address: "500 Highway 6, Kemah, TX 77565",
+    coordinates: { lat: 29.543, lng: -95.0213 },
+    placeId: "ChIJUyKniEY4QIYRuOsVPoAJeW5",
   },
 ]
 
+// TypeScript interfaces for type safety
+interface WalmartLocation {
+  id: string
+  name: string
+  address: string
+  coordinates: { lat: number; lng: number }
+  priority?: number
+  placeId?: string
+}
+
+interface RouteInfo {
+  totalDistance: string
+  totalDuration: string
+  route: string[]
+  trafficInfo?: string
+  weatherInfo?: string
+}
+
+interface WeatherData {
+  location: string
+  temperature: number
+  condition: string
+  icon: string
+  humidity: number
+  windSpeed: number
+}
+
 interface MapError {
-  type: "api" | "network" | "geocoding" | "routing"
+  type: "api" | "network" | "routing" | "places" | "weather"
   message: string
   details?: string
 }
 
-export function MapVisualization() {
+// Declare global Google Maps types for TypeScript
+declare global {
+  interface Window {
+    google: any
+    initGoogleMaps: () => void
+  }
+}
+
+// Google Maps type definitions for better TypeScript support
+type GoogleMap = any
+type GoogleMapsService = any
+type GoogleMapsMarker = any
+type GoogleMapsInfoWindow = any
+
+export default function MapVisualization() {
+  // Map and Google APIs references
   const mapRef = useRef<HTMLDivElement>(null)
-  const [map, setMap] = useState<any>(null)
+  const [map, setMap] = useState<GoogleMap | null>(null)
+  const [directionsService, setDirectionsService] = useState<GoogleMapsService | null>(null)
+  const [directionsRenderer, setDirectionsRenderer] = useState<GoogleMapsService | null>(null)
+  const [placesService, setPlacesService] = useState<GoogleMapsService | null>(null)
+  const [trafficLayer, setTrafficLayer] = useState<any | null>(null)
+
+  // UI state management
   const [isLoaded, setIsLoaded] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [markers, setMarkers] = useState<any[]>([])
-  const [routeLines, setRouteLines] = useState<any[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<MapError | null>(null)
-  const [routeInfo, setRouteInfo] = useState<{
-    totalDistance: number
-    totalDuration: number
-    route: string[]
-  } | null>(null)
 
-  const { boxes } = useOptimizationStore()
+  // Location and route state
+  const [selectedStores, setSelectedStores] = useState<WalmartLocation[]>([])
+  const [markers, setMarkers] = useState<any[]>([])
+  const [warehouseMarker, setWarehouseMarker] = useState<any | null>(null)
+  const [truckMarker, setTruckMarker] = useState<any | null>(null)
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
 
-  // OpenRouteService API key - replace with your own
-  const apiKey = "5b3ce3597851100001cf62848060d6c3a82f4685accd09c0edd72edf"
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
 
+  // Feature toggles for extensibility
+  const [trafficLayerEnabled, setTrafficLayerEnabled] = useState(true)
+  const [routeOptimizationEnabled, setRouteOptimizationEnabled] = useState(true)
+  const [weatherOverlayEnabled, setWeatherOverlayEnabled] = useState(true)
+  const [warehouseOverlayEnabled, setWarehouseOverlayEnabled] = useState(true)
+
+  // Google Maps API key - Replace with your actual API key
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyBHSNMm74onzOin26VZqzPcDvqAMNqFNMs"
+
+  /**
+   * Initialize Google Maps on component mount
+   * Loads the Google Maps JavaScript API with required libraries
+   */
   useEffect(() => {
-    loadLeaflet()
-  }, [])
+    if (!apiKey) {
+      setError({
+        type: "api",
+        message: "Google Maps API key not configured",
+        details: "Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY environment variable",
+      })
+      setIsLoading(false)
+      return
+    }
+    loadGoogleMaps()
+  }, [apiKey])
 
-  const loadLeaflet = async () => {
+  /**
+   * Auto-select 4 random stores and add warehouse when map is loaded
+   */
+  useEffect(() => {
+    if (isLoaded && selectedStores.length === 0) {
+      selectRandomStores()
+      if (warehouseOverlayEnabled) {
+        addWarehouseMarker()
+      }
+      if (weatherOverlayEnabled) {
+        fetchWeatherData()
+      }
+    }
+  }, [isLoaded, warehouseOverlayEnabled, weatherOverlayEnabled])
+
+  /**
+   * Load Google Maps JavaScript API with Places and Geometry libraries
+   * Handles script injection and initialization callback
+   */
+  const loadGoogleMaps = useCallback(() => {
     try {
       setIsLoading(true)
       setError(null)
 
-      // Load Leaflet CSS
-      const link = document.createElement("link")
-      link.rel = "stylesheet"
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      document.head.appendChild(link)
+      // Check if Google Maps is already loaded
+      if (window.google && window.google.maps) {
+        initializeMap()
+        return
+      }
 
-      // Load Leaflet JS
-      const script = document.createElement("script")
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-
-      script.onload = () => {
-        if (typeof window !== "undefined" && (window as any).L) {
+      // Set up initialization callback
+      window.initGoogleMaps = () => {
+        if (window.google && window.google.maps) {
           initializeMap()
         } else {
           setError({
             type: "api",
-            message: "Failed to load map library",
-            details: "Leaflet library could not be loaded properly",
+            message: "Failed to load Google Maps",
+            details: "Google Maps API could not be initialized properly",
           })
+          setIsLoading(false)
         }
       }
 
+      // Create and inject Google Maps script
+      const script = document.createElement("script")
+      script.src = "https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&callback=initGoogleMaps"
+      script.async = true
+      script.defer = true
       script.onerror = () => {
         setError({
           type: "network",
-          message: "Network error loading map",
-          details: "Could not load Leaflet from CDN",
+          message: "Network error loading Google Maps",
+          details: "Could not load Google Maps API from CDN. Check your internet connection and API key.",
         })
         setIsLoading(false)
       }
 
       document.head.appendChild(script)
     } catch (error) {
-      console.error("Error loading Leaflet:", error)
+      console.error("Error loading Google Maps:", error)
       setError({
         type: "api",
-        message: "Failed to initialize map",
+        message: "Failed to initialize Google Maps",
         details: error instanceof Error ? error.message : "Unknown error",
       })
       setIsLoading(false)
     }
-  }
+  }, [apiKey])
 
+  /**
+   * Initialize Google Maps instance and services
+   * Sets up map with dark mode styling and initializes required services
+   */
   const initializeMap = useCallback(() => {
-    if (!mapRef.current || !(window as any).L) return
+    if (!mapRef.current || !window.google) return
 
     try {
-      const L = (window as any).L
+      // Dark mode Google Maps styles for professional presentation
+      const darkMapStyles: any[] = [
+        { elementType: "geometry", stylers: [{ color: "#212121" }] },
+        { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
+        {
+          featureType: "administrative",
+          elementType: "geometry",
+          stylers: [{ color: "#757575" }],
+        },
+        {
+          featureType: "administrative.country",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#9e9e9e" }],
+        },
+        {
+          featureType: "administrative.land_parcel",
+          stylers: [{ visibility: "off" }],
+        },
+        {
+          featureType: "administrative.locality",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#bdbdbd" }],
+        },
+        {
+          featureType: "poi",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#757575" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "geometry",
+          stylers: [{ color: "#181818" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#616161" }],
+        },
+        {
+          featureType: "poi.park",
+          elementType: "labels.text.stroke",
+          stylers: [{ color: "#1b1b1b" }],
+        },
+        {
+          featureType: "road",
+          elementType: "geometry.fill",
+          stylers: [{ color: "#2c2c2c" }],
+        },
+        {
+          featureType: "road",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#8a8a8a" }],
+        },
+        {
+          featureType: "road.arterial",
+          elementType: "geometry",
+          stylers: [{ color: "#373737" }],
+        },
+        {
+          featureType: "road.highway",
+          elementType: "geometry",
+          stylers: [{ color: "#3c3c3c" }],
+        },
+        {
+          featureType: "road.highway.controlled_access",
+          elementType: "geometry",
+          stylers: [{ color: "#4e4e4e" }],
+        },
+        {
+          featureType: "road.local",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#616161" }],
+        },
+        {
+          featureType: "transit",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#757575" }],
+        },
+        {
+          featureType: "water",
+          elementType: "geometry",
+          stylers: [{ color: "#000000" }],
+        },
+        {
+          featureType: "water",
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#3d3d3d" }],
+        },
+      ]
 
-      // Initialize map centered on Phoenix area (where most stores are)
-      const mapInstance = L.map(mapRef.current, {
+      // Initialize map centered on Texas region where warehouse and stores are located
+      const mapInstance = new window.google.maps.Map(mapRef.current, {
+        zoom: 8,
+        center: warehouseLocation.coordinates, // Center on warehouse
+        styles: darkMapStyles,
+        mapTypeControl: true,
+        streetViewControl: true,
+        fullscreenControl: true,
         zoomControl: true,
-        attributionControl: true,
-      }).setView([33.4484, -112.074], 10)
-
-      // Add dark tile layer with error handling
-      const tileLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-        attribution: "© OpenStreetMap contributors, © CARTO",
-        errorTileUrl:
-          "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0iIzBhMGEwYSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmaWxsPSJoc2woMjEwIDEwMCUgNTAlKSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5vIFRpbGU8L3RleHQ+PC9zdmc+",
+        mapTypeControlOptions: {
+          style: window.google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
+          position: window.google.maps.ControlPosition.TOP_RIGHT,
+        },
       })
 
-      tileLayer.on("tileerror", (e: any) => {
-        console.warn("Tile loading error:", e)
+      // Initialize directions service and renderer
+      const directionsServiceInstance = new window.google.maps.DirectionsService()
+      const directionsRendererInstance = new window.google.maps.DirectionsRenderer({
+        suppressMarkers: true, // We'll use custom markers
+        polylineOptions: {
+          strokeColor: "#3b82f6", // Map primary color
+          strokeWeight: 6,
+          strokeOpacity: 0.9,
+        },
       })
+      directionsRendererInstance.setMap(mapInstance)
 
-      tileLayer.addTo(mapInstance)
+      // Initialize Places service for search functionality
+      const placesServiceInstance = new window.google.maps.places.PlacesService(mapInstance)
 
+      // Initialize traffic layer (but don't add to map yet)
+      const trafficLayerInstance = new window.google.maps.TrafficLayer()
+      if (trafficLayerEnabled) {
+        trafficLayerInstance.setMap(mapInstance)
+      }
+
+      // Set state
       setMap(mapInstance)
+      setDirectionsService(directionsServiceInstance)
+      setDirectionsRenderer(directionsRendererInstance)
+      setPlacesService(placesServiceInstance)
+      setTrafficLayer(trafficLayerInstance)
       setIsLoaded(true)
       setIsLoading(false)
-
-      // Add Walmart store markers
-      addWalmartMarkers(mapInstance, L)
-
-      // Handle map resize
-      setTimeout(() => {
-        mapInstance.invalidateSize()
-      }, 100)
     } catch (error) {
       console.error("Error initializing map:", error)
       setError({
@@ -179,186 +417,318 @@ export function MapVisualization() {
       })
       setIsLoading(false)
     }
+  }, [trafficLayerEnabled])
+
+  /**
+   * Add warehouse marker to the map
+   * Creates custom warehouse icon and info window
+   */
+  const addWarehouseMarker = useCallback(() => {
+    if (!map || !window.google) return
+
+    const warehouseIcon = {
+      url:
+          "data:image/svg+xml;charset=UTF-8," +
+          encodeURIComponent(`
+        <svg width="50" height="50" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="25" cy="25" r="23" fill="#3b82f6" stroke="#1e40af" strokeWidth="2"/>
+          <path d="M10 18h30v14H10z" fill="white"/>
+          <path d="M12 20h26v2H12zm0 4h26v2H12zm0 4h26v2H12z" fill="#3b82f6"/>
+          <text x="25" y="42" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">HQ</text>
+        </svg>
+      `),
+      scaledSize: new window.google.maps.Size(50, 50),
+      anchor: new window.google.maps.Point(25, 25),
+    }
+
+    const marker = new window.google.maps.Marker({
+      position: warehouseLocation.coordinates,
+      map: map,
+      icon: warehouseIcon,
+      title: warehouseLocation.name,
+    })
+
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: `
+        <div style="color: #1f2937; padding: 12px; min-width: 280px; font-family: system-ui;">
+          <h3 style="margin: 0 0 8px 0; color: #3b82f6; font-weight: bold; font-size: 16px;">
+            🏭 ${warehouseLocation.name}
+          </h3>
+          <p style="margin: 0 0 8px 0; font-size: 14px; color: #4b5563;">${warehouseLocation.address}</p>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+            <span>📦 Distribution Hub</span>
+            <span>🚛 Route Origin</span>
+          </div>
+        </div>
+      `,
+    })
+
+    marker.addListener("click", () => {
+      infoWindow.open(map, marker)
+    })
+
+    setWarehouseMarker(marker)
+  }, [map])
+
+  /**
+   * Add truck marker to represent delivery vehicle
+   * Creates animated truck icon that moves along the route
+   */
+  const addTruckMarker = useCallback(
+      (position: any) => {
+        if (!map || !window.google) return
+
+        // Remove existing truck marker
+        if (truckMarker) {
+          truckMarker.setMap(null)
+        }
+
+        const truckIcon = {
+          url:
+              "data:image/svg+xml;charset=UTF-8," +
+              encodeURIComponent(`
+        <svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="18" fill="#10b981" stroke="#059669" strokeWidth="2"/>
+          <path d="M8 16h8v8H8zm10-2h6v4h-6zm8 2h4v8h-4z" fill="white"/>
+          <circle cx="12" cy="26" r="2" fill="#059669"/>
+          <circle cx="28" cy="26" r="2" fill="#059669"/>
+          <text x="20" y="12" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">🚛</text>
+        </svg>
+      `),
+          scaledSize: new window.google.maps.Size(40, 40),
+          anchor: new window.google.maps.Point(20, 20),
+        }
+
+        const marker = new window.google.maps.Marker({
+          position: position,
+          map: map,
+          icon: truckIcon,
+          title: "Delivery Truck",
+          zIndex: 1000,
+        })
+
+        const infoWindow = new window.google.maps.InfoWindow({
+          content: `
+        <div style="color: #1f2937; padding: 8px; min-width: 200px; font-family: system-ui;">
+          <h4 style="margin: 0 0 8px 0; color: #10b981; font-weight: bold;">🚛 Delivery Vehicle</h4>
+          <p style="margin: 0; font-size: 14px;">Currently on route for deliveries</p>
+          <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+            Real-time tracking enabled
+          </div>
+        </div>
+      `,
+        })
+
+        marker.addListener("click", () => {
+          infoWindow.open(map, marker)
+        })
+
+        setTruckMarker(marker)
+      },
+      [map, truckMarker],
+  )
+
+  /**
+   * Fetch weather data simulation
+   * Simulates weather data for the area
+   */
+  const fetchWeatherData = useCallback(async () => {
+    try {
+      // Simulate weather data (in production, you'd call a real weather API)
+      setWeatherData({
+        location: "Dallas-Fort Worth, TX",
+        temperature: 78,
+        condition: "Partly Cloudy",
+        icon: "🌤",
+        humidity: 65,
+        windSpeed: 8,
+      })
+    } catch (error) {
+      console.error("Weather fetch error:", error)
+      // Weather is optional, don't show error for this
+    }
   }, [])
 
-  const addWalmartMarkers = useCallback(
-    (mapInstance: any, L: any) => {
-      const newMarkers: any[] = []
+  /**
+   * Randomly select 4 Walmart stores from the pool
+   * Updates selectedStores state and adds markers to map
+   */
+  const selectRandomStores = useCallback(() => {
+    if (!map) return
 
-      try {
-        walmartStores.forEach((store) => {
-          const [lng, lat] = store.coordinates
+    try {
+      // Clear existing markers
+      markers.forEach((marker) => marker.setMap(null))
+      setMarkers([])
+      setRouteInfo(null)
 
-          // Create custom icon based on type
-          const iconHtml =
-            store.type === "warehouse"
-              ? `<div class="flex items-center justify-center w-10 h-10 bg-primary rounded-full shadow-lg border-2 border-primary-foreground/50">
-               <svg class="w-5 h-5 text-black" fill="currentColor" viewBox="0 0 20 20">
-                 <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
-               </svg>
-             </div>`
-              : `<div class="flex items-center justify-center w-8 h-8 bg-orange-500 rounded-full shadow-lg border-2 border-orange-300/50">
-               <span class="text-white text-sm font-bold">${store.priority}</span>
-             </div>`
+      // Remove existing truck marker
+      if (truckMarker) {
+        truckMarker.setMap(null)
+        setTruckMarker(null)
+      }
 
-          const customIcon = L.divIcon({
-            html: iconHtml,
-            className: "custom-marker",
-            iconSize: [40, 40],
-            iconAnchor: [20, 20],
+      // Randomly select 4 stores
+      const shuffled = [...walmartStorePool].sort(() => 0.5 - Math.random())
+      const selected = shuffled.slice(0, 4).map((store, index) => ({
+        ...store,
+        priority: index + 1,
+      }))
+
+      setSelectedStores(selected)
+      addStoreMarkers(selected)
+    } catch (error) {
+      console.error("Error selecting random stores:", error)
+      setError({
+        type: "api",
+        message: "Failed to select stores",
+        details: error instanceof Error ? error.message : "Unknown error",
+      })
+    }
+  }, [map, markers, truckMarker])
+
+  /**
+   * Add store markers to the map with custom styling
+   * Creates numbered markers for each selected store
+   */
+  const addStoreMarkers = useCallback(
+      (stores: WalmartLocation[]) => {
+        if (!map || !window.google) return
+
+        const newMarkers: any[] = []
+
+        stores.forEach((store, index) => {
+          // Create custom numbered marker icon
+          const storeIcon = {
+            url:
+                "data:image/svg+xml;charset=UTF-8," +
+                encodeURIComponent(`
+          <svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="20" cy="20" r="18" fill="#f97316" stroke="#ea580c" strokeWidth="2"/>
+            <text x="20" y="26" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">${index + 1}</text>
+          </svg>
+        `),
+            scaledSize: new window.google.maps.Size(40, 40),
+            anchor: new window.google.maps.Point(20, 20),
+          }
+
+          const marker = new window.google.maps.Marker({
+            position: store.coordinates,
+            map: map,
+            icon: storeIcon,
+            title: store.name,
           })
 
-          const marker = L.marker([lat, lng], { icon: customIcon }).addTo(mapInstance)
-
-          // Get boxes for this stop
-          const stopBoxes = boxes.filter((box) => box.destination === `Stop ${store.priority}`)
-          const boxCount = stopBoxes.length
-          const totalWeight = stopBoxes.reduce((sum, box) => sum + box.weight, 0)
-
-          const popupContent = `
-          <div class="p-4 bg-gray-900 text-white rounded-lg border-2 border-primary/50 min-w-[250px]">
-            <div class="flex items-center space-x-2 mb-2">
-              ${
-                store.type === "warehouse"
-                  ? '<svg class="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9z"/></svg>'
-                  : '<svg class="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg>'
-              }
-              <h3 class="font-bold text-primary">${store.name}</h3>
+          // Create info window with store details
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `
+          <div style="color: #1f2937; padding: 12px; min-width: 280px; font-family: system-ui;">
+            <h3 style="margin: 0 0 8px 0; color: #f97316; font-weight: bold; font-size: 16px;">
+              🏪 ${store.name}
+            </h3>
+            <p style="margin: 0 0 8px 0; font-size: 14px; color: #4b5563;">${store.address}</p>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #6b7280;">
+              <span>🎯 Priority: <strong>${index + 1}</strong></span>
+              <span>🚛 Stop: <strong>${index + 1}</strong></span>
             </div>
-            <p class="text-sm text-gray-300 mb-3">${store.address}</p>
-            ${
-              store.type === "warehouse"
-                ? `<div class="space-y-2 text-sm">
-                   <div class="flex justify-between">
-                     <span class="text-primary">📦 Total Boxes:</span>
-                     <span class="text-white font-bold">${boxes.length}</span>
-                   </div>
-                   <div class="flex justify-between">
-                     <span class="text-primary">⚖️ Total Weight:</span>
-                     <span class="text-white font-bold">${boxes.reduce((sum, box) => sum + box.weight, 0)} lbs</span>
-                   </div>
-                 </div>`
-                : `<div class="space-y-2 text-sm">
-                   <div class="flex justify-between">
-                     <span class="text-primary">📦 Boxes to deliver:</span>
-                     <span class="text-white font-bold">${boxCount}</span>
-                   </div>
-                   <div class="flex justify-between">
-                     <span class="text-primary">⚖️ Weight:</span>
-                     <span class="text-white font-bold">${totalWeight} lbs</span>
-                   </div>
-                   <div class="flex justify-between">
-                     <span class="text-primary">🎯 Priority:</span>
-                     <span class="text-orange-400 font-bold">${store.priority}</span>
-                   </div>
-                 </div>`
-            }
           </div>
-        `
-
-          marker.bindPopup(popupContent, {
-            maxWidth: 300,
-            className: "custom-popup",
+        `,
           })
+
+          marker.addListener("click", () => {
+            infoWindow.open(map, marker)
+          })
+
           newMarkers.push(marker)
         })
 
         setMarkers(newMarkers)
-      } catch (error) {
-        console.error("Error adding markers:", error)
-        setError({
-          type: "api",
-          message: "Failed to add store markers",
-          details: error instanceof Error ? error.message : "Unknown error",
-        })
-      }
-    },
-    [boxes],
+      },
+      [map],
   )
 
-  const calculateOptimalRoute = async () => {
-    if (!map || markers.length === 0) return
+  /**
+   * Calculate and display optimal route starting from warehouse
+   * Uses Google Directions API with real-time traffic data and warehouse origin
+   */
+  const calculateOptimalRoute = useCallback(async () => {
+    if (!directionsService || !directionsRenderer || selectedStores.length === 0) return
 
     setIsCalculatingRoute(true)
     setError(null)
 
     try {
-      const L = (window as any).L
+      // Create waypoints from all selected stores
+      const waypoints = selectedStores.map((store) => ({
+        location: store.coordinates,
+        stopover: true,
+      }))
 
-      // Clear existing routes
-      routeLines.forEach((line) => map.removeLayer(line))
-      setRouteLines([])
-
-      // Get coordinates for route calculation
-      const coords = walmartStores.map((store) => store.coordinates)
-
-      // Get distance matrix with error handling
-      const matrixUrl = "https://api.openrouteservice.org/v2/matrix/driving-car"
-      const body = {
-        locations: coords,
-        metrics: ["distance", "duration"],
-        units: "km",
-      }
-
-      const response = await fetch(matrixUrl, {
-        method: "POST",
-        headers: {
-          Authorization: apiKey,
-          "Content-Type": "application/json",
+      // Route starts from warehouse and visits all stores
+      const request: any = {
+        origin: warehouseLocation.coordinates, // Start from warehouse
+        destination: warehouseLocation.coordinates, // Return to warehouse
+        waypoints: waypoints,
+        optimizeWaypoints: routeOptimizationEnabled,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+        drivingOptions: {
+          departureTime: new Date(), // Current time for real-time traffic
+          trafficModel: window.google.maps.TrafficModel.BEST_GUESS,
         },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30000), // 30 second timeout
-      })
-
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status} - ${response.statusText}`)
+        unitSystem: window.google.maps.UnitSystem.IMPERIAL,
+        avoidHighways: false,
+        avoidTolls: false,
       }
 
-      const matrix = await response.json()
+      directionsService.route(request, (result: any, status: any) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          directionsRenderer.setDirections(result)
 
-      if (matrix.error) {
-        throw new Error(`OpenRouteService Error: ${matrix.error.message || "Unknown API error"}`)
-      }
+          // Add truck marker at the starting position (warehouse)
+          addTruckMarker(warehouseLocation.coordinates)
 
-      const distances = matrix.distances
-      const durations = matrix.durations
+          // Extract and calculate route information
+          const route = result.routes[0]
+          let totalDistance = 0
+          let totalDuration = 0
 
-      // Calculate optimal route considering priorities
-      const optimalRoute = calculatePriorityBasedRoute(distances, walmartStores)
+          route.legs.forEach((leg: any) => {
+            totalDistance += leg.distance?.value || 0
+            totalDuration += leg.duration?.value || 0
+          })
 
-      // Draw the optimal route
-      const newRouteLines: any[] = []
-      let totalDistance = 0
-      let totalDuration = 0
+          // Convert to readable format
+          const distanceText = (totalDistance / 1609.34).toFixed(1) + " miles"
+          const durationText = Math.round(totalDuration / 60) + " minutes"
 
-      for (let i = 0; i < optimalRoute.length - 1; i++) {
-        const startIdx = optimalRoute[i]
-        const endIdx = optimalRoute[i + 1]
-        const startCoord = coords[startIdx]
-        const endCoord = coords[endIdx]
+          // Check for traffic delays
+          let trafficInfo = ""
+          const firstLeg = route.legs[0]
+          if (firstLeg.duration_in_traffic) {
+            const trafficDelay = (firstLeg.duration_in_traffic.value - firstLeg.duration!.value) / 60
+            trafficInfo =
+                trafficDelay > 5
+                    ? ${Math.round(trafficDelay)} min delay due to traffic
+                    : "No significant traffic delays"
+          }
 
-        totalDistance += distances[startIdx][endIdx]
-        totalDuration += durations[startIdx][endIdx]
+          // Build route sequence starting with warehouse
+          const routeNames = [
+            "Warehouse: " + warehouseLocation.name.split("#")[0],
+            ...selectedStores.map((store, index) => Stop ${index + 1}: ${store.name.split("#")[0]}),
+            "Return: " + warehouseLocation.name.split("#")[0],
+          ]
 
-        // Draw route segment
-        const routeLine = await drawRoute(startCoord, endCoord, L)
-        if (routeLine) {
-          newRouteLines.push(routeLine)
+          setRouteInfo({
+            totalDistance: distanceText,
+            totalDuration: durationText,
+            route: routeNames,
+            trafficInfo: trafficInfo || undefined,
+            weatherInfo: weatherData ? ${weatherData.temperature}°F, ${weatherData.condition} : undefined,
+          })
+        } else {
+          throw new Error(Directions request failed: ${status})
         }
-      }
-
-      setRouteLines(newRouteLines)
-
-      // Set route info
-      const routeNames = optimalRoute.map((idx) => {
-        const store = walmartStores[idx]
-        return store.type === "warehouse" ? "Warehouse" : `Stop ${store.priority}`
-      })
-
-      setRouteInfo({
-        totalDistance,
-        totalDuration,
-        route: routeNames,
       })
     } catch (error) {
       console.error("Route calculation error:", error)
@@ -370,255 +740,493 @@ export function MapVisualization() {
     } finally {
       setIsCalculatingRoute(false)
     }
-  }
+  }, [directionsService, directionsRenderer, selectedStores, routeOptimizationEnabled, weatherData, addTruckMarker])
 
-  const drawRoute = async (start: number[], end: number[], L: any) => {
-    try {
-      const dirUrl = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${start[0]},${start[1]}&end=${end[0]},${end[1]}`
+  /**
+   * Search for places using Google Places API
+   * Extensible search functionality for custom locations
+   */
+  const searchPlaces = useCallback(
+      async (query: string) => {
+        if (!placesService || query.length < 3) {
+          setSearchResults([])
+          return
+        }
 
-      const res = await fetch(dirUrl, {
-        signal: AbortSignal.timeout(15000), // 15 second timeout
-      })
+        setIsSearching(true)
+        setError(null)
 
-      if (!res.ok) {
-        throw new Error(`Route API Error: ${res.status}`)
+        try {
+          const request = {
+            query: query,
+            fields: ["name", "geometry", "formatted_address", "place_id"],
+          }
+
+          placesService.textSearch(request, (results: any, status: any) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+              setSearchResults(results.slice(0, 5))
+            } else {
+              setSearchResults([])
+              if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                setError({
+                  type: "places",
+                  message: "Search failed",
+                  details: Places API error: ${status},
+                })
+              }
+            }
+            setIsSearching(false)
+          })
+        } catch (error) {
+          console.error("Search error:", error)
+          setError({
+            type: "places",
+            message: "Search failed",
+            details: error instanceof Error ? error.message : "Unknown search error",
+          })
+          setIsSearching(false)
+        }
+      },
+      [placesService],
+  )
+
+  /**
+   * Add custom location from search results
+   * Extensibility feature for adding custom waypoints
+   */
+  const addCustomLocation = useCallback(
+      (place: any) => {
+        if (!map || !place.geometry?.location) return
+
+        try {
+          const customIcon = {
+            url:
+                "data:image/svg+xml;charset=UTF-8," +
+                encodeURIComponent(`
+          <svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="16" cy="16" r="14" fill="#10b981" stroke="#059669" strokeWidth="2"/>
+            <path d="M16 8l3 6h5l-4 3 1.5 6-5.5-4-5.5 4L12 17l-4-3h5l3-6z" fill="white"/>
+          </svg>
+        `),
+            scaledSize: new window.google.maps.Size(32, 32),
+            anchor: new window.google.maps.Point(16, 16),
+          }
+
+          const marker = new window.google.maps.Marker({
+            position: place.geometry.location,
+            map: map,
+            icon: customIcon,
+            title: place.name,
+          })
+
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `
+          <div style="color: #1f2937; padding: 8px; min-width: 200px;">
+            <h4 style="margin: 0 0 8px 0; color: #10b981; font-weight: bold;">📍 Custom Location</h4>
+            <p style="margin: 0; font-size: 14px;">${place.formatted_address || place.name}</p>
+          </div>
+        `,
+          })
+
+          marker.addListener("click", () => {
+            infoWindow.open(map, marker)
+          })
+
+          map.setCenter(place.geometry.location)
+          map.setZoom(14)
+          setSearchResults([])
+          setSearchQuery("")
+        } catch (error) {
+          console.error("Error adding custom location:", error)
+          setError({
+            type: "api",
+            message: "Failed to add location",
+            details: error instanceof Error ? error.message : "Unknown error",
+          })
+        }
+      },
+      [map],
+  )
+
+  /**
+   * Toggle traffic layer visibility
+   * Extensibility feature for traffic analysis
+   */
+  const toggleTrafficLayer = useCallback(() => {
+    if (!trafficLayer || !map) return
+
+    setTrafficLayerEnabled((prev) => {
+      const newState = !prev
+      if (newState) {
+        trafficLayer.setMap(map)
+      } else {
+        trafficLayer.setMap(null)
       }
-
-      const json = await res.json()
-
-      if (json.error) {
-        throw new Error(`Route Error: ${json.error.message}`)
-      }
-
-      const geometry = json.features[0].geometry
-
-      const polyline = L.geoJSON(geometry, {
-        color: "hsl(var(--primary))",
-        weight: 4,
-        opacity: 0.8,
-        className: "route-line",
-      }).addTo(map)
-
-      return polyline
-    } catch (error) {
-      console.error("Route drawing error:", error)
-      return null
-    }
-  }
-
-  const calculatePriorityBasedRoute = (distances: number[][], stores: typeof walmartStores) => {
-    // Start from warehouse (index 0)
-    let current = 0
-    const visited = [current]
-    const remaining = stores.slice(1).map((_, idx) => idx + 1)
-
-    // Sort remaining stops by priority
-    remaining.sort((a, b) => stores[a].priority - stores[b].priority)
-
-    // Visit stops in priority order
-    remaining.forEach((stopIdx) => {
-      visited.push(stopIdx)
-      current = stopIdx
+      return newState
     })
-
-    return visited
-  }
-
-  const searchPlaces = async (query: string) => {
-    if (query.length < 3) {
-      setSearchResults([])
-      return
-    }
-
-    setIsSearching(true)
-    setError(null)
-
-    try {
-      const url = `https://api.openrouteservice.org/geocode/search?api_key=${apiKey}&text=${query}&boundary.country=US&size=5`
-
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      })
-
-      if (!res.ok) {
-        throw new Error(`Search API Error: ${res.status}`)
-      }
-
-      const data = await res.json()
-
-      if (data.error) {
-        throw new Error(`Search Error: ${data.error.message}`)
-      }
-
-      setSearchResults(data.features || [])
-    } catch (error) {
-      console.error("Search error:", error)
-      setError({
-        type: "geocoding",
-        message: "Search failed",
-        details: error instanceof Error ? error.message : "Unknown search error",
-      })
-    } finally {
-      setIsSearching(false)
-    }
-  }
-
-  const addCustomLocation = (place: any) => {
-    if (!map) return
-
-    try {
-      const L = (window as any).L
-      const [lng, lat] = place.geometry.coordinates
-
-      const customIcon = L.divIcon({
-        html: `<div class="flex items-center justify-center w-8 h-8 bg-green-500 rounded-full shadow-lg border-2 border-green-300/50">
-                 <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                   <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                 </svg>
-               </div>`,
-        className: "custom-marker",
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-      })
-
-      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map)
-      marker.bindPopup(`
-        <div class="p-3 bg-gray-900 text-white rounded-lg border-2 border-green-500/50">
-          <h4 class="font-bold text-green-400">Custom Location</h4>
-          <p class="text-sm text-gray-300">${place.properties.label}</p>
-        </div>
-      `)
-
-      map.setView([lat, lng], 12)
-      setSearchResults([])
-      setSearchQuery("")
-    } catch (error) {
-      console.error("Error adding custom location:", error)
-      setError({
-        type: "api",
-        message: "Failed to add location",
-        details: error instanceof Error ? error.message : "Unknown error",
-      })
-    }
-  }
+  }, [trafficLayer, map])
 
   const clearError = () => setError(null)
 
   return (
-    <div className="w-full h-full relative bg-gray-900">
-      {/* Map Container */}
-      <div ref={mapRef} className="w-full h-full map-container" />
+      <div className="w-full h-screen relative bg-background">
+        {/* Map Container */}
+        <div ref={mapRef} className="w-full h-full" style={{ background: "hsl(var(--muted))" }} />
 
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-[2000]">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin loading-spinner mx-auto mb-4"></div>
-            <p className="text-primary text-lg font-semibold">Loading map...</p>
-          </div>
-        </div>
-      )}
-
-      {/* Error Display */}
-      {error && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1500] max-w-md">
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              <div className="space-y-1">
-                <div className="font-semibold">{error.message}</div>
-                {error.details && <div className="text-sm opacity-80">{error.details}</div>}
-                <Button size="sm" variant="outline" onClick={clearError} className="mt-2">
-                  Dismiss
-                </Button>
+        {/* Loading Overlay */}
+        {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-50">
+              <div className="text-center space-y-4">
+                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-foreground text-lg font-semibold">Loading Google Maps...</p>
+                <p className="text-muted-foreground text-sm">
+                  Initializing route planner with real warehouse and store locations...
+                </p>
               </div>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
+            </div>
+        )}
 
-  {/* Control Panel */}
-  <div className="absolute top-4 left-4 z-[1000] w-96">
-    <Card className="bg-gray-800/80 backdrop-blur-md border-2 border-var(--primary)/30">
-      <CardHeader>
-        <CardTitle className="flex items-center text-var(--primary)">
-          <Navigation className="h-5 w-5 mr-2" />
-          Route Planner
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {/* Search Bar */}
-        <div className="relative mb-4">
-          <Input
-            type="text"
-            placeholder="Search for a location..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              searchPlaces(e.target.value)
-            }}
-            className="bg-gray-900/50 border-var(--primary)/50 text-white pl-10 focus:ring-var(--primary) focus:border-var(--primary)"
-          />
-          <div className="absolute left-3 top-1/2 -translate-y-1/2">
-            {isSearching ? (
-              <Loader2 className="h-5 w-5 text-var(--primary) animate-spin" />
-            ) : (
-              <Search className="h-5 w-5 text-var(--primary)" />
-            )}
-          </div>
-          {searchResults.length > 0 && (
-            <Card className="absolute z-10 mt-2 w-full bg-gray-800 border-var(--primary)/50">
-              <CardContent className="p-2 max-h-60 overflow-y-auto">
-                <ul>
-                  {searchResults.map((result) => (
-                    <li
-                      key={result.properties.id}
-                      className="p-2 text-sm text-gray-300 hover:bg-var(--primary)/20 rounded cursor-pointer"
-                      onClick={() => addCustomLocation(result)}
-                    >
-                      {result.properties.label}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-
-    {/* Route Summary */}
-    <div className="absolute bottom-4 left-4 z-[1000]">
-      <Card className="bg-gray-800/80 backdrop-blur-md border-2 border-primary/30">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-primary flex items-center">
-            <Navigation className="h-4 w-4 mr-2" />
-            Delivery Route
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-xs space-y-1 max-h-40 overflow-y-auto">
-            {walmartStores.map((store, index) => (
-              <div key={store.id} className="flex items-center space-x-2 p-1">
-                <span className="text-primary font-bold min-w-[20px]">{index + 1}.</span>
-                <div className="flex-1">
-                  <div className="text-white font-medium">
-                    {store.type === "warehouse" ? "Warehouse" : `Stop ${store.priority}`}
+        {/* Error Display */}
+        {error && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 max-w-md">
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <div className="font-semibold">{error.message}</div>
+                    {error.details && <div className="text-sm opacity-90">{error.details}</div>}
+                    <Button size="sm" variant="outline" onClick={clearError} className="mt-2 bg-transparent">
+                      Dismiss
+                    </Button>
                   </div>
-                  <div className="text-gray-400 text-xs truncate">{store.name}</div>
+                </AlertDescription>
+              </Alert>
+            </div>
+        )}
+
+        {/* Control Panel - Left Side */}
+        <div className="absolute top-4 left-4 z-30 w-96 space-y-4">
+          {/* Main Controls Card */}
+          <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-primary">
+                <Navigation className="h-5 w-5 mr-2" />
+                Walmart Route Optimizer
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Search Bar */}
+              <div className="relative">
+                <Input
+                    type="text"
+                    placeholder="Search for additional locations..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value)
+                      searchPlaces(e.target.value)
+                    }}
+                    className="pl-10 bg-background border-border"
+                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                  {isSearching ? (
+                      <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                  ) : (
+                      <Search className="h-4 w-4 text-primary" />
+                  )}
                 </div>
-                {store.type !== "warehouse" && (
-                  <span className="text-orange-400 text-xs font-bold">
-                    ({boxes.filter((box) => box.destination === `Stop ${store.priority}`).length})
-                  </span>
+                {/* Search Results Dropdown */}
+                {searchResults.length > 0 && (
+                    <Card className="absolute z-10 mt-2 w-full bg-card border-border">
+                      <CardContent className="p-2 max-h-60 overflow-y-auto">
+                        {searchResults.map((result, index) => (
+                            <div
+                                key={result.place_id || index}
+                                className="p-2 text-sm hover:bg-accent rounded cursor-pointer flex items-center space-x-2"
+                                onClick={() => addCustomLocation(result)}
+                            >
+                              <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="font-medium text-foreground">{result.name}</div>
+                                <div className="text-xs text-muted-foreground">{result.formatted_address}</div>
+                              </div>
+                            </div>
+                        ))}
+                      </CardContent>
+                    </Card>
                 )}
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-    </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-2">
+                <Button
+                    onClick={selectRandomStores}
+                    disabled={!isLoaded}
+                    variant="outline"
+                    className="flex-1 bg-transparent"
+                >
+                  <Shuffle className="h-4 w-4 mr-2" />
+                  New Route
+                </Button>
+                <Button
+                    onClick={calculateOptimalRoute}
+                    disabled={!isLoaded || selectedStores.length === 0 || isCalculatingRoute}
+                    className="flex-1"
+                >
+                  {isCalculatingRoute ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                      <Route className="h-4 w-4 mr-2" />
+                  )}
+                  Calculate Route
+                </Button>
+              </div>
+
+              {/* Feature Toggles */}
+              <div className="space-y-3 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Car className="h-4 w-4 text-primary" />
+                    <span className="text-sm">Traffic Layer</span>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={toggleTrafficLayer} className="h-6 w-10 p-0">
+                    {trafficLayerEnabled ? (
+                        <ToggleRight className="h-5 w-5 text-green-500" />
+                    ) : (
+                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Navigation className="h-4 w-4 text-primary" />
+                    <span className="text-sm">Route Optimization</span>
+                  </div>
+                  <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRouteOptimizationEnabled(!routeOptimizationEnabled)}
+                      className="h-6 w-10 p-0"
+                  >
+                    {routeOptimizationEnabled ? (
+                        <ToggleRight className="h-5 w-5 text-green-500" />
+                    ) : (
+                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Warehouse className="h-4 w-4 text-primary" />
+                    <span className="text-sm">Show Warehouse</span>
+                  </div>
+                  <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setWarehouseOverlayEnabled(!warehouseOverlayEnabled)}
+                      className="h-6 w-10 p-0"
+                  >
+                    {warehouseOverlayEnabled ? (
+                        <ToggleRight className="h-5 w-5 text-green-500" />
+                    ) : (
+                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <CloudSun className="h-4 w-4 text-primary" />
+                    <span className="text-sm">Weather Info</span>
+                  </div>
+                  <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setWeatherOverlayEnabled(!weatherOverlayEnabled)}
+                      className="h-6 w-10 p-0"
+                  >
+                    {weatherOverlayEnabled ? (
+                        <ToggleRight className="h-5 w-5 text-green-500" />
+                    ) : (
+                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Weather Info Card */}
+          {weatherOverlayEnabled && weatherData && (
+              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-primary flex items-center">
+                    <Thermometer className="h-4 w-4 mr-2" />
+                    Current Weather - {weatherData.location}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-3xl">{weatherData.icon}</span>
+                      <div>
+                        <div className="text-xl font-semibold text-foreground">{weatherData.temperature}°F</div>
+                        <div className="text-sm text-muted-foreground">{weatherData.condition}</div>
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <div>Humidity: {weatherData.humidity}%</div>
+                      <div>Wind: {weatherData.windSpeed} mph</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+          )}
+        </div>
+
+        {/* Selected Stores Info - Right Side */}
+        {selectedStores.length > 0 && (
+            <div className="absolute top-4 right-4 z-30 w-80">
+              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-primary flex items-center">
+                    <Store className="h-4 w-4 mr-2" />
+                    Selected Stores ({selectedStores.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {/* Warehouse as starting point */}
+                    <div className="flex items-start space-x-3 p-3 bg-primary/10 rounded-lg">
+                      <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold">
+                        🏭
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-foreground truncate">{warehouseLocation.name.split("#")[0]}</div>
+                        <div className="text-xs text-muted-foreground truncate">{warehouseLocation.address}</div>
+                        <div className="text-xs text-primary mt-1">Route Origin</div>
+                      </div>
+                    </div>
+                    {/* Selected stores */}
+                    {selectedStores.map((store, index) => (
+                        <div key={store.id} className="flex items-start space-x-3 p-3 bg-accent/50 rounded-lg">
+                          <div className="flex-shrink-0 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-foreground truncate">{store.name.split("#")[0]}</div>
+                            <div className="text-xs text-muted-foreground truncate">{store.address}</div>
+                            <div className="text-xs text-primary mt-1">Stop {index + 1}</div>
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+        )}
+
+        {/* Route Summary Card - Bottom Left */}
+        {routeInfo && (
+            <div className="absolute bottom-4 left-4 z-30">
+              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg min-w-[320px]">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-primary flex items-center">
+                    <Route className="h-4 w-4 mr-2" />
+                    Optimized Route Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Route Stats */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center space-x-2">
+                      <Navigation className="h-4 w-4 text-primary" />
+                      <div>
+                        <div className="font-semibold text-foreground">{routeInfo.totalDistance}</div>
+                        <div className="text-xs text-muted-foreground">Total Distance</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <div>
+                        <div className="font-semibold text-foreground">{routeInfo.totalDuration}</div>
+                        <div className="text-xs text-muted-foreground">Estimated Time</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Truck Status */}
+                  {truckMarker && (
+                      <div className="flex items-center space-x-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <Truck className="h-4 w-4 text-green-600" />
+                        <div className="text-sm text-green-700 dark:text-green-400">
+                          Delivery truck positioned at warehouse
+                        </div>
+                      </div>
+                  )}
+
+                  {/* Traffic and Weather Info */}
+                  {(routeInfo.trafficInfo || routeInfo.weatherInfo) && (
+                      <div className="space-y-2 text-xs">
+                        {routeInfo.trafficInfo && (
+                            <div className="flex items-center space-x-2 text-yellow-600">
+                              <Car className="h-3 w-3" />
+                              <span>{routeInfo.trafficInfo}</span>
+                            </div>
+                        )}
+                        {routeInfo.weatherInfo && (
+                            <div className="flex items-center space-x-2 text-primary">
+                              <CloudSun className="h-3 w-3" />
+                              <span>{routeInfo.weatherInfo}</span>
+                            </div>
+                        )}
+                      </div>
+                  )}
+
+                  {/* Route Sequence */}
+                  <div className="border-t border-border pt-3">
+                    <div className="text-xs text-muted-foreground mb-2">Route Sequence:</div>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {routeInfo.route.map((stop, index) => (
+                          <div key={index} className="flex items-center space-x-2 text-xs">
+                            <span className="text-primary font-bold min-w-[20px]">{index + 1}.</span>
+                            <span className="text-foreground">{stop}</span>
+                          </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+        )}
+
+        {/* API Key Warning - Show if no API key configured */}
+        {!apiKey && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-50">
+              <Card className="border-destructive max-w-md">
+                <CardHeader>
+                  <CardTitle className="text-destructive flex items-center">
+                    <AlertTriangle className="h-5 w-5 mr-2" />
+                    Configuration Required
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 text-sm">
+                    <p className="text-muted-foreground">Google Maps API key is required to use this feature.</p>
+                    <div className="bg-muted p-3 rounded">
+                      <p className="font-medium text-foreground mb-2">Steps to configure:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        <li>Get a Google Maps API key from Google Cloud Console</li>
+                        <li>Enable Maps JavaScript API, Places API, and Directions API</li>
+                        <li>Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY environment variable</li>
+                      </ol>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      For production, use environment variables instead of hardcoding the API key.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+        )}
+      </div>
   )
 }
