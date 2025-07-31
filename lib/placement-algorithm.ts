@@ -1,3 +1,4 @@
+
 import type { Box } from '@/types/box'
 import type { PhysicsEngine } from './physics-engine'
 import { MCTSPlacementOptimizer } from './mcts-placement'
@@ -32,9 +33,20 @@ export interface StateTransition {
   reward: number
 }
 
+interface SpatialCell {
+  boxes: Box[]
+  bounds: { min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number } }
+}
+
 export class PlacementAlgorithm {
   private mctsOptimizer: MCTSPlacementOptimizer
   private graphEncoder: GraphStateEncoder
+  private explorationRate: number = 0.3
+  private transitionMatrix = new Map<string, StateTransition[]>()
+  private animationCallbacks: Array<(boxes: Box[], progress: number) => void> = []
+  private spatialGrid = new Map<string, SpatialCell>()
+  private gridSize = 2.0 // 2 meter cells for spatial optimization
+  private placementProgress = 0
 
   constructor(
     private physicsEngine: PhysicsEngine,
@@ -42,335 +54,306 @@ export class PlacementAlgorithm {
   ) {
     this.mctsOptimizer = new MCTSPlacementOptimizer(constraints.truckDimensions, constraints)
     this.graphEncoder = new GraphStateEncoder()
+    this.initializeSpatialGrid()
   }
 
-  async findOptimalPlacements(boxes: Box[]): Promise<Box[]> {
-    // Use MCTS for optimal placement when box count is manageable
-    if (boxes.length <= 15) {
-      return this.findOptimalPlacementsMCTS(boxes)
-    } else {
-      // Fall back to heuristic approach for large sets
-      return this.findOptimalPlacementsHeuristic(boxes)
-    }
-  }
-
-  private async findOptimalPlacementsMCTS(boxes: Box[]): Promise<Box[]> {
-    console.log('🧠 Using MCTS-based placement optimization...')
-
-    try {
-      const optimizedBoxes = this.mctsOptimizer.findOptimalPlacement(boxes)
-
-      // Build state graph for the solution
-      this.graphEncoder = new GraphStateEncoder()
-      for (const box of optimizedBoxes) {
-        this.graphEncoder.annotate(box, box.position)
-      }
-
-      console.log('✅ MCTS optimization complete')
-      return optimizedBoxes
-    } catch (error) {
-      console.warn('⚠️ MCTS optimization failed, falling back to heuristic:', error)
-      return this.findOptimalPlacementsHeuristic(boxes)
-    }
-  }
-
-  private async findOptimalPlacementsHeuristic(boxes: Box[]): Promise<Box[]> {
-    console.log('🔄 Using heuristic placement optimization...')
-
-    // Sort boxes by priority (heavy, fragile, temperature-sensitive first)
-    const sortedBoxes = this.sortBoxesByPriority(boxes)
-    const placedBoxes: Box[] = []
-
-    for (const box of sortedBoxes) {
-      const optimalPosition = await this.findBestPosition(box, placedBoxes)
-      if (optimalPosition) {
-        const placedBox = { ...box, position: optimalPosition }
-        placedBoxes.push(placedBox)
-
-        // Update graph state
-        this.graphEncoder.annotate(placedBox, optimalPosition)
-      }
-    }
-
-    return placedBoxes
-  }
-
-  getStateGraph(): GraphStateEncoder {
-    return this.graphEncoder
-  }
-
-  private async performMonteCarloRollout(
-    initialState: PlacementState, 
-    remainingBoxes: Box[], 
-    maxSteps = 20
-  ): Promise<PlacementState> {
-    let currentState = { ...initialState }
-    let steps = 0
-
-    for (const box of remainingBoxes.slice(0, maxSteps)) {
-      const candidatePositions = this.generateCandidatePositions(box, currentState)
-      const bestTransition = await this.selectBestTransition(currentState, box, candidatePositions)
-
-      if (bestTransition) {
-        currentState = bestTransition.toState
-        this.recordTransition(bestTransition)
-        steps++
-      }
-    }
-
-    // Final scoring with physics validation
-    const finalScore = await this.evaluateStateWithPhysics(currentState)
-    currentState.score = finalScore
-
-    return currentState
-  }
-
-  private async selectBestTransition(
-    currentState: PlacementState, 
-    box: Box, 
-    candidatePositions: Array<{ x: number; y: number; z: number }>
-  ): Promise<StateTransition | null> {
-    const transitions: StateTransition[] = []
-
-    for (const position of candidatePositions) {
-      // Check cold storage constraints
-      if (this.violatesColdStorageConstraints(box, position)) {
-        continue
-      }
-
-      const newState = this.createStateWithBoxPlacement(currentState, box, position)
-      const reward = await this.calculateReward(currentState, newState, box, position)
-      const probability = this.calculateTransitionProbability(currentState, newState, box, position)
-
-      transitions.push({
-        fromState: currentState,
-        toState: newState,
-        action: { boxId: box.id, position },
-        probability,
-        reward
-      })
-    }
-
-    // Epsilon-greedy selection with exploration
-    if (Math.random() < this.explorationRate) {
-      // Exploration: random selection
-      return transitions[Math.floor(Math.random() * transitions.length)] || null
-    } else {
-      // Exploitation: best reward
-      return transitions.reduce((best, current) => 
-        current.reward > best.reward ? current : best
-      ) || null
-    }
-  }
-
-  private violatesColdStorageConstraints(box: Box, position: { x: number; y: number; z: number }): boolean {
-    const { frozen, cold } = this.constraints.temperatureZones
-
-    // Check frozen zones
-    for (const zone of frozen) {
-      if (this.boxIntersectsZone(box, position, zone)) {
-        return true
-      }
-    }
-
-    // Check cold zones for non-cold boxes
-    if (box.temperatureRequirement !== 'cold' && box.temperatureRequirement !== 'frozen') {
-      for (const zone of cold) {
-        if (this.boxIntersectsZone(box, position, zone)) {
-          return true
+  private initializeSpatialGrid(): void {
+    const { width, length, height } = this.constraints.truckDimensions
+    
+    for (let x = -width/2; x < width/2; x += this.gridSize) {
+      for (let y = 0; y < height; y += this.gridSize) {
+        for (let z = -length/2; z < length/2; z += this.gridSize) {
+          const key = `${Math.floor(x/this.gridSize)}_${Math.floor(y/this.gridSize)}_${Math.floor(z/this.gridSize)}`
+          this.spatialGrid.set(key, {
+            boxes: [],
+            bounds: {
+              min: { x, y, z },
+              max: { x: x + this.gridSize, y: y + this.gridSize, z: z + this.gridSize }
+            }
+          })
         }
       }
     }
-
-    return false
   }
 
-  private boxIntersectsZone(
-    box: Box, 
-    position: { x: number; y: number; z: number }, 
-    zone: { x: number; y: number; z: number; width: number; height: number; length: number }
-  ): boolean {
-    return !(
-      position.x + box.width / 2 <= zone.x - zone.width / 2 ||
-      position.x - box.width / 2 >= zone.x + zone.width / 2 ||
-      position.y + box.height / 2 <= zone.y - zone.height / 2 ||
-      position.y - box.height / 2 >= zone.y + zone.height / 2 ||
-      position.z + box.length / 2 <= zone.z - zone.length / 2 ||
-      position.z - box.length / 2 >= zone.z + zone.length / 2
-    )
+  async findOptimalPlacements(boxes: Box[]): Promise<Box[]> {
+    console.log(`🚚 Starting placement optimization for ${boxes.length} boxes...`)
+    this.placementProgress = 0
+
+    // Use batch processing for large sets
+    if (boxes.length > 100) {
+      return this.findOptimalPlacementsBatched(boxes)
+    } else if (boxes.length <= 15) {
+      return this.findOptimalPlacementsMCTS(boxes)
+    } else {
+      return this.findOptimalPlacementsHeuristic(boxes)
+    }
   }
 
-  private generateCandidatePositions(box: Box, state: PlacementState): Array<{ x: number; y: number; z: number }> {
+  private async findOptimalPlacementsBatched(boxes: Box[]): Promise<Box[]> {
+    console.log('🔄 Using batched placement optimization for large dataset...')
+    
+    const batchSize = 20
+    const allPlacedBoxes: Box[] = []
+    const batches = this.createOptimizedBatches(boxes, batchSize)
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      this.placementProgress = (i / batches.length) * 100
+      
+      console.log(`📦 Processing batch ${i + 1}/${batches.length} (${batch.length} boxes)`)
+      
+      // Use MCTS for smaller batches, heuristic for larger ones
+      const batchResult = batch.length <= 15 
+        ? await this.processBatchMCTS(batch, allPlacedBoxes)
+        : await this.processBatchHeuristic(batch, allPlacedBoxes)
+      
+      allPlacedBoxes.push(...batchResult)
+      
+      // Update spatial grid
+      this.updateSpatialGrid(batchResult)
+      
+      // Trigger progress callback
+      this.triggerProgressCallback(allPlacedBoxes, this.placementProgress)
+      
+      // Allow other tasks to run
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+
+    this.placementProgress = 100
+    console.log(`✅ Batch processing complete: ${allPlacedBoxes.length} boxes placed`)
+    return allPlacedBoxes
+  }
+
+  private createOptimizedBatches(boxes: Box[], batchSize: number): Box[][] {
+    // Sort boxes by priority first
+    const sortedBoxes = this.sortBoxesByPriority(boxes)
+    const batches: Box[][] = []
+    
+    // Create balanced batches considering weight and size
+    let currentBatch: Box[] = []
+    let currentWeight = 0
+    let currentVolume = 0
+    
+    for (const box of sortedBoxes) {
+      const boxWeight = box.weight
+      const boxVolume = box.width * box.height * box.length
+      
+      // Start new batch if current would exceed limits
+      if ((currentBatch.length >= batchSize) || 
+          (currentWeight + boxWeight > 8000) || // Weight limit per batch
+          (currentVolume + boxVolume > 50)) {    // Volume limit per batch
+        
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch)
+          currentBatch = []
+          currentWeight = 0
+          currentVolume = 0
+        }
+      }
+      
+      currentBatch.push(box)
+      currentWeight += boxWeight
+      currentVolume += boxVolume
+    }
+    
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch)
+    }
+    
+    return batches
+  }
+
+  private async processBatchMCTS(batch: Box[], existingBoxes: Box[]): Promise<Box[]> {
+    try {
+      // Create temporary MCTS optimizer with current state
+      const tempOptimizer = new MCTSPlacementOptimizer(this.constraints.truckDimensions, this.constraints)
+      return tempOptimizer.findOptimalPlacement(batch, existingBoxes)
+    } catch (error) {
+      console.warn('⚠️ MCTS batch processing failed, falling back to heuristic:', error)
+      return this.processBatchHeuristic(batch, existingBoxes)
+    }
+  }
+
+  private async processBatchHeuristic(batch: Box[], existingBoxes: Box[]): Promise<Box[]> {
+    const placedBoxes: Box[] = []
+    
+    for (const box of batch) {
+      const optimalPosition = await this.findBestPositionOptimized(box, [...existingBoxes, ...placedBoxes])
+      if (optimalPosition) {
+        const placedBox = { ...box, position: optimalPosition }
+        placedBoxes.push(placedBox)
+        
+        // Update graph state
+        this.graphEncoder.annotate(placedBox, optimalPosition)
+      } else {
+        console.warn(`⚠️ Could not place box ${box.id}`)
+      }
+    }
+    
+    return placedBoxes
+  }
+
+  private updateSpatialGrid(newBoxes: Box[]): void {
+    for (const box of newBoxes) {
+      const gridKey = this.getGridKey(box.position)
+      const cell = this.spatialGrid.get(gridKey)
+      if (cell) {
+        cell.boxes.push(box)
+      }
+    }
+  }
+
+  private getGridKey(position: { x: number; y: number; z: number }): string {
+    const x = Math.floor(position.x / this.gridSize)
+    const y = Math.floor(position.y / this.gridSize)
+    const z = Math.floor(position.z / this.gridSize)
+    return `${x}_${y}_${z}`
+  }
+
+  private async findBestPositionOptimized(box: Box, placedBoxes: Box[]): Promise<{ x: number; y: number; z: number } | null> {
+    const candidates: Array<{ position: { x: number; y: number; z: number }; score: number }> = []
+    
+    // Generate candidate positions using spatial optimization
+    const candidatePositions = this.generateCandidatePositionsOptimized(box, placedBoxes)
+    
+    for (const position of candidatePositions) {
+      if (this.isValidPositionOptimized(box, position, placedBoxes)) {
+        const score = await this.evaluatePositionDetailed(box, position, placedBoxes)
+        candidates.push({ position, score })
+      }
+    }
+
+    if (candidates.length === 0) {
+      console.warn(`❌ No valid positions found for box ${box.id}`)
+      return null
+    }
+
+    // Sort by score and return best position
+    candidates.sort((a, b) => b.score - a.score)
+    return candidates[0].position
+  }
+
+  private generateCandidatePositionsOptimized(box: Box, placedBoxes: Box[]): Array<{ x: number; y: number; z: number }> {
     const positions: Array<{ x: number; y: number; z: number }> = []
     const { width, length, height } = this.constraints.truckDimensions
-    const stepSize = 0.5
-
-    // Grid-based position generation with physics-aware placement
-    for (let x = -width/2 + box.width/2; x <= width/2 - box.width/2; x += stepSize) {
-      for (let z = -length/2 + box.length/2; z <= length/2 - box.length/2; z += stepSize) {
-        for (let y = box.height/2; y <= height - box.height/2; y += stepSize) {
-          if (this.isValidPosition(box, { x, y, z }, state)) {
-            positions.push({ x, y, z })
+    const stepSize = 0.25 // Finer grid for better placement
+    
+    // Priority positions: floor positions first
+    for (let x = -width/2 + box.width/2 + 0.1; x <= width/2 - box.width/2 - 0.1; x += stepSize) {
+      for (let z = -length/2 + box.length/2 + 0.1; z <= length/2 - box.length/2 - 0.1; z += stepSize) {
+        positions.push({ x, y: box.height/2, z })
+      }
+    }
+    
+    // Stack positions: on top of existing boxes
+    for (const placedBox of placedBoxes) {
+      const stackY = placedBox.position.y + placedBox.height/2 + box.height/2 + 0.05 // Small gap
+      
+      if (stackY + box.height/2 <= height - 0.1) {
+        // Try positions centered on the placed box
+        positions.push({
+          x: placedBox.position.x,
+          y: stackY,
+          z: placedBox.position.z
+        })
+        
+        // Try offset positions for better packing
+        const offsets = [
+          { x: placedBox.width/4, z: 0 },
+          { x: -placedBox.width/4, z: 0 },
+          { x: 0, z: placedBox.length/4 },
+          { x: 0, z: -placedBox.length/4 }
+        ]
+        
+        for (const offset of offsets) {
+          const x = placedBox.position.x + offset.x
+          const z = placedBox.position.z + offset.z
+          
+          if (x - box.width/2 >= -width/2 + 0.1 && x + box.width/2 <= width/2 - 0.1 &&
+              z - box.length/2 >= -length/2 + 0.1 && z + box.length/2 <= length/2 - 0.1) {
+            positions.push({ x, y: stackY, z })
           }
         }
       }
     }
-
+    
     return positions
   }
 
-  private isValidPosition(box: Box, position: { x: number; y: number; z: number }, state: PlacementState): boolean {
-    // Check collision with existing boxes
-    for (const existingBox of state.boxes) {
-      if (this.boxesCollide(box, position, existingBox, existingBox.position)) {
+  private isValidPositionOptimized(box: Box, position: { x: number; y: number; z: number }, placedBoxes: Box[]): boolean {
+    const { width, length, height } = this.constraints.truckDimensions
+    const tolerance = 0.05 // 5cm tolerance
+    
+    // Check truck boundaries with tolerance
+    if (position.x - box.width/2 < -width/2 + tolerance ||
+        position.x + box.width/2 > width/2 - tolerance ||
+        position.y - box.height/2 < tolerance ||
+        position.y + box.height/2 > height - tolerance ||
+        position.z - box.length/2 < -length/2 + tolerance ||
+        position.z + box.length/2 > length/2 - tolerance) {
+      return false
+    }
+
+    // Optimized collision detection using spatial grid
+    const nearbyBoxes = this.getNearbyBoxes(position, placedBoxes)
+    
+    for (const otherBox of nearbyBoxes) {
+      if (this.boxesCollideWithTolerance(box, position, otherBox, otherBox.position, tolerance)) {
         return false
       }
     }
 
-    // Check truck boundaries
-    const { width, length, height } = this.constraints.truckDimensions
-    if (
-      position.x - box.width/2 < -width/2 || position.x + box.width/2 > width/2 ||
-      position.y - box.height/2 < 0 || position.y + box.height/2 > height ||
-      position.z - box.length/2 < -length/2 || position.z + box.length/2 > length/2
-    ) {
-      return false
+    // Check if box has adequate support (if not on floor)
+    if (position.y > box.height/2 + 0.2) {
+      const supportArea = this.calculateSupportArea(box, position, placedBoxes)
+      const requiredSupport = box.isFragile ? 0.8 : 0.6 // Fragile boxes need more support
+      if (supportArea < requiredSupport) {
+        return false
+      }
     }
 
     return true
   }
 
-  private boxesCollide(
-    box1: Box, 
-    pos1: { x: number; y: number; z: number },
-    box2: Box, 
-    pos2: { x: number; y: number; z: number }
+  private getNearbyBoxes(position: { x: number; y: number; z: number }, allBoxes: Box[]): Box[] {
+    // Simple proximity check - could be optimized with spatial indexing
+    const searchRadius = 5.0
+    return allBoxes.filter(box => {
+      const dx = box.position.x - position.x
+      const dy = box.position.y - position.y
+      const dz = box.position.z - position.z
+      return Math.sqrt(dx*dx + dy*dy + dz*dz) <= searchRadius
+    })
+  }
+
+  private boxesCollideWithTolerance(
+    box1: Box, pos1: { x: number; y: number; z: number },
+    box2: Box, pos2: { x: number; y: number; z: number },
+    tolerance: number
   ): boolean {
     return !(
-      pos1.x + box1.width/2 <= pos2.x - box2.width/2 ||
-      pos1.x - box1.width/2 >= pos2.x + box2.width/2 ||
-      pos1.y + box1.height/2 <= pos2.y - box2.height/2 ||
-      pos1.y - box1.height/2 >= pos2.y + box2.height/2 ||
-      pos1.z + box1.length/2 <= pos2.z - box2.length/2 ||
-      pos1.z - box1.length/2 >= pos2.z + box2.length/2
+      pos1.x + box1.width/2 + tolerance <= pos2.x - box2.width/2 ||
+      pos1.x - box1.width/2 >= pos2.x + box2.width/2 + tolerance ||
+      pos1.y + box1.height/2 + tolerance <= pos2.y - box2.height/2 ||
+      pos1.y - box1.height/2 >= pos2.y + box2.height/2 + tolerance ||
+      pos1.z + box1.length/2 + tolerance <= pos2.z - box2.length/2 ||
+      pos1.z - box1.length/2 >= pos2.z + box2.length/2 + tolerance
     )
   }
 
-  private calculateTransitionProbability(
-    fromState: PlacementState,
-    toState: PlacementState,
-    box: Box,
-    position: { x: number; y: number; z: number }
-  ): number {
-    let probability = 0.5 // Base probability
-
-    // Increase probability based on stability
-    if (toState.stabilityScore > fromState.stabilityScore) {
-      probability += 0.3
-    }
-
-    // Decrease probability for risky placements
-    if (position.y > this.constraints.truckDimensions.height * 0.7) {
-      probability -= 0.2 // High placement penalty
-    }
-
-    // Increase probability for good support
-    const supportScore = this.calculateSupportScore(box, position, fromState)
-    probability += supportScore * 0.2
-
-    return Math.max(0.1, Math.min(0.9, probability))
-  }
-
-  private async calculateReward(
-    fromState: PlacementState,
-    toState: PlacementState,
-    box: Box,
-    position: { x: number; y: number; z: number }
-  ): Promise<number> {
-    let reward = 0
-
-    // Stability reward
-    const stabilityGain = toState.stabilityScore - fromState.stabilityScore
-    reward += stabilityGain * 10
-
-    // Space efficiency reward
-    const spaceUtilization = this.calculateSpaceUtilization(toState)
-    reward += spaceUtilization * 5
-
-    // Accessibility reward (LIFO compliance)
-    if (this.constraints.lifoOrder) {
-      const accessibilityScore = this.calculateAccessibilityScore(box, position, toState)
-      reward += accessibilityScore * 3
-    }
-
-    // Collision penalty
-    if (toState.collisions > fromState.collisions) {
-      reward -= (toState.collisions - fromState.collisions) * 5
-    }
-
-    // Physics-based reward
-    const physicsReward = await this.calculatePhysicsReward(toState)
-    reward += physicsReward
-
-    return reward
-  }
-
-  private async calculatePhysicsReward(state: PlacementState): Promise<number> {
-    // Simulate physics for a few steps and measure stability
-    let reward = 0
-
-    try {
-      // Add boxes to physics simulation
-      for (const box of state.boxes) {
-        this.physicsEngine.addBox({
-          id: box.id,
-          width: box.width,
-          height: box.height,
-          length: box.length,
-          weight: box.weight,
-          position: box.position,
-          isFragile: box.isFragile
-        })
-      }
-
-      // Run simulation for a few steps
-      for (let i = 0; i < 60; i++) { // 1 second at 60 FPS
-        const stats = this.physicsEngine.step(1/60)
-        reward += (stats.stability / 100) * 0.1 // Small reward for each stable step
-
-        if (stats.collisions > 0) {
-          reward -= stats.collisions * 0.5 // Penalty for collisions
-        }
-      }
-
-      // Clean up
-      for (const box of state.boxes) {
-        this.physicsEngine.removeBox(box.id)
-      }
-
-    } catch (error) {
-      console.warn('Physics simulation error:', error)
-      reward = -10 // Heavy penalty for physics errors
-    }
-
-    return reward
-  }
-
-  private calculateSupportScore(box: Box, position: { x: number; y: number; z: number }, state: PlacementState): number {
-    if (position.y <= box.height/2 + 0.1) {
-      return 1.0 // On floor
-    }
-
+  private calculateSupportArea(box: Box, position: { x: number; y: number; z: number }, placedBoxes: Box[]): number {
     let supportArea = 0
     const boxArea = box.width * box.length
-
-    for (const existingBox of state.boxes) {
-      if (existingBox.position.y < position.y) {
-        const overlapArea = this.calculateOverlapArea(box, position, existingBox, existingBox.position)
+    
+    for (const supportBox of placedBoxes) {
+      // Check if support box is below and close enough
+      if (Math.abs(supportBox.position.y + supportBox.height/2 - (position.y - box.height/2)) <= 0.1) {
+        const overlapArea = this.calculateOverlapArea(box, position, supportBox, supportBox.position)
         supportArea += overlapArea
       }
     }
-
+    
     return Math.min(1.0, supportArea / boxArea)
   }
 
@@ -394,159 +377,201 @@ export class PlacementAlgorithm {
     return overlapWidth * overlapLength
   }
 
-  private calculateSpaceUtilization(state: PlacementState): number {
-    const totalTruckVolume = this.constraints.truckDimensions.width * 
-                           this.constraints.truckDimensions.length * 
-                           this.constraints.truckDimensions.height
+  private async evaluatePositionDetailed(box: Box, position: { x: number; y: number; z: number }, placedBoxes: Box[]): Promise<number> {
+    let score = 100
 
-    const usedVolume = state.boxes.reduce((sum, box) => 
-      sum + (box.width * box.height * box.length), 0
-    )
+    // Stability score (prefer lower positions)
+    score += (this.constraints.truckDimensions.height - position.y) * 10
 
-    return usedVolume / totalTruckVolume
-  }
+    // Center preference (better weight distribution)
+    const lateralDistance = Math.abs(position.x)
+    score -= lateralDistance * 2
 
-  private calculateAccessibilityScore(box: Box, position: { x: number; y: number; z: number }, state: PlacementState): number {
-    // LIFO compliance - boxes closer to truck opening (positive Z) should be more accessible
-    const maxZ = this.constraints.truckDimensions.length / 2
-    const accessibilityRatio = (position.z + maxZ) / (2 * maxZ)
-
-    return accessibilityRatio
-  }
-
-  private createStateWithBoxPlacement(state: PlacementState, box: Box, position: { x: number; y: number; z: number }): PlacementState {
-    const newBox = { ...box, position }
-    const newBoxes = [...state.boxes, newBox]
-
-    return {
-      boxes: newBoxes,
-      score: 0, // Will be calculated later
-      stabilityScore: this.calculateStateStability(newBoxes),
-      collisions: 0, // Will be calculated by physics
-      transitions: state.transitions + 1
-    }
-  }
-
-  private calculateStateStability(boxes: Box[]): number {
-    let stability = 100
-    const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
-
-    if (totalWeight === 0) return 100
-
-    // Center of gravity calculation
-    const centerOfGravity = {
-      x: boxes.reduce((sum, box) => sum + box.position.x * box.weight, 0) / totalWeight,
-      y: boxes.reduce((sum, box) => sum + box.position.y * box.weight, 0) / totalWeight,
-      z: boxes.reduce((sum, box) => sum + box.position.z * box.weight, 0) / totalWeight,
+    // Support quality
+    if (position.y > box.height/2 + 0.2) {
+      const supportArea = this.calculateSupportArea(box, position, placedBoxes)
+      score += supportArea * 30
+    } else {
+      score += 20 // Floor placement bonus
     }
 
-    // Penalize high center of gravity
-    if (centerOfGravity.y > this.constraints.truckDimensions.height * 0.6) {
-      stability -= 20
-    }
+    // Accessibility (LIFO compliance)
+    const accessibilityScore = (position.z + this.constraints.truckDimensions.length/2) / this.constraints.truckDimensions.length
+    score += accessibilityScore * 15
 
-    // Penalize off-center weight distribution
-    const lateralOffset = Math.abs(centerOfGravity.x) / (this.constraints.truckDimensions.width / 2)
-    stability -= lateralOffset * 15
+    // Temperature zone compliance
+    score += this.getTemperatureZoneScore(box, position) * 25
 
-    return Math.max(0, Math.min(100, stability))
-  }
-
-  private async evaluateStateWithPhysics(state: PlacementState): Promise<number> {
-    const physicsReward = await this.calculatePhysicsReward(state)
-    const spaceUtilization = this.calculateSpaceUtilization(state)
-    const stabilityScore = state.stabilityScore
-
-    return (physicsReward * 0.4) + (spaceUtilization * 100 * 0.3) + (stabilityScore * 0.3)
-  }
-
-  private initializeState(): PlacementState {
-    return {
-      boxes: [],
-      score: 0,
-      stabilityScore: 100,
-      collisions: 0,
-      transitions: 0
-    }
-  }
-
-  private recordTransition(transition: StateTransition): void {
-    const stateKey = this.generateStateKey(transition.fromState)
-    if (!this.transitionMatrix.has(stateKey)) {
-      this.transitionMatrix.set(stateKey, [])
-    }
-    this.transitionMatrix.get(stateKey)!.push(transition)
-  }
-
-  private updateTransitionProbabilities(successfulState: PlacementState): void {
-    // Update transition probabilities based on successful outcomes
-    // This implements the learning aspect of the RL-inspired approach
-    for (const [stateKey, transitions] of this.transitionMatrix.entries()) {
-      for (const transition of transitions) {
-        if (transition.toState.score < successfulState.score) {
-          transition.probability *= 0.95 // Decay unsuccessful transitions
-        } else {
-          transition.probability *= 1.05 // Reinforce successful transitions
-          transition.probability = Math.min(0.9, transition.probability)
-        }
+    // Fragile item safety
+    if (box.isFragile) {
+      if (position.y > this.constraints.truckDimensions.height * 0.6) {
+        score -= 30 // High placement penalty for fragile items
+      }
+      const supportArea = this.calculateSupportArea(box, position, placedBoxes)
+      if (supportArea < 0.8) {
+        score -= 20 // Insufficient support penalty
       }
     }
+
+    // Space efficiency (how well it uses available space)
+    const spaceEfficiency = this.calculateLocalSpaceEfficiency(position, placedBoxes)
+    score += spaceEfficiency * 10
+
+    return Math.max(0, score)
   }
 
-  private generateStateKey(state: PlacementState): string {
-    return `${state.boxes.length}_${state.stabilityScore.toFixed(1)}_${state.transitions}`
+  private getTemperatureZoneScore(box: Box, position: { x: number; y: number; z: number }): number {
+    const { frozen, cold } = this.constraints.temperatureZones
+    
+    // Check frozen zone compliance
+    if (box.temperatureRequirement === 'frozen') {
+      for (const zone of frozen) {
+        if (this.positionInZone(position, zone)) {
+          return 1.0 // Perfect match
+        }
+      }
+      return -0.5 // Wrong zone penalty
+    }
+    
+    // Check cold zone compliance
+    if (box.temperatureRequirement === 'cold') {
+      for (const zone of cold) {
+        if (this.positionInZone(position, zone)) {
+          return 1.0 // Perfect match
+        }
+      }
+      return -0.3 // Wrong zone penalty
+    }
+    
+    // Regular temperature - avoid temperature zones
+    for (const zone of [...frozen, ...cold]) {
+      if (this.positionInZone(position, zone)) {
+        return -0.4 // Wrong zone penalty
+      }
+    }
+    
+    return 0.5 // Regular zone
+  }
+
+  private positionInZone(position: { x: number; y: number; z: number }, zone: { x: number; y: number; z: number; width: number; height: number; length: number }): boolean {
+    return position.x >= zone.x - zone.width/2 && position.x <= zone.x + zone.width/2 &&
+           position.y >= zone.y - zone.height/2 && position.y <= zone.y + zone.height/2 &&
+           position.z >= zone.z - zone.length/2 && position.z <= zone.z + zone.length/2
+  }
+
+  private calculateLocalSpaceEfficiency(position: { x: number; y: number; z: number }, placedBoxes: Box[]): number {
+    // Calculate how efficiently this position uses nearby space
+    const radius = 2.0
+    let nearbyVolume = 0
+    let usedVolume = 0
+    
+    for (const box of placedBoxes) {
+      const distance = Math.sqrt(
+        Math.pow(box.position.x - position.x, 2) +
+        Math.pow(box.position.y - position.y, 2) +
+        Math.pow(box.position.z - position.z, 2)
+      )
+      
+      if (distance <= radius) {
+        nearbyVolume += radius * radius * radius // Simplified sphere volume
+        usedVolume += box.width * box.height * box.length
+      }
+    }
+    
+    return nearbyVolume > 0 ? usedVolume / nearbyVolume : 0.5
+  }
+
+  // Keep existing methods for compatibility
+  private async findOptimalPlacementsMCTS(boxes: Box[]): Promise<Box[]> {
+    console.log('🧠 Using MCTS-based placement optimization...')
+
+    try {
+      const optimizedBoxes = this.mctsOptimizer.findOptimalPlacement(boxes)
+
+      // Build state graph for the solution
+      this.graphEncoder = new GraphStateEncoder()
+      for (const box of optimizedBoxes) {
+        this.graphEncoder.annotate(box, box.position)
+      }
+
+      console.log('✅ MCTS optimization complete')
+      return optimizedBoxes
+    } catch (error) {
+      console.warn('⚠️ MCTS optimization failed, falling back to heuristic:', error)
+      return this.findOptimalPlacementsHeuristic(boxes)
+    }
+  }
+
+  private async findOptimalPlacementsHeuristic(boxes: Box[]): Promise<Box[]> {
+    console.log('🔄 Using heuristic placement optimization...')
+
+    const sortedBoxes = this.sortBoxesByPriority(boxes)
+    const placedBoxes: Box[] = []
+
+    for (let i = 0; i < sortedBoxes.length; i++) {
+      const box = sortedBoxes[i]
+      this.placementProgress = (i / sortedBoxes.length) * 100
+      
+      const optimalPosition = await this.findBestPositionOptimized(box, placedBoxes)
+      if (optimalPosition) {
+        const placedBox = { ...box, position: optimalPosition }
+        placedBoxes.push(placedBox)
+        this.graphEncoder.annotate(placedBox, optimalPosition)
+      }
+      
+      // Trigger progress callback
+      if (i % 5 === 0) { // Update every 5 boxes
+        this.triggerProgressCallback(placedBoxes, this.placementProgress)
+      }
+    }
+
+    return placedBoxes
   }
 
   private sortBoxesByPriority(boxes: Box[]): Box[] {
-    // Prioritize boxes based on weight, fragility, and temperature requirements
     return [...boxes].sort((a, b) => {
+      // Priority order: fragile, temperature requirements, weight, size
       if (a.isFragile && !b.isFragile) return -1
       if (!a.isFragile && b.isFragile) return 1
 
-      if (a.temperatureRequirement === 'frozen' && b.temperatureRequirement !== 'frozen') return -1
-      if (a.temperatureRequirement === 'cold' && b.temperatureRequirement === 'regular') return -1
-      if (b.temperatureRequirement === 'frozen' && a.temperatureRequirement !== 'frozen') return 1
-      if (b.temperatureRequirement === 'cold' && a.temperatureRequirement === 'regular') return 1
+      const tempPriorityA = a.temperatureRequirement === 'frozen' ? 3 : a.temperatureRequirement === 'cold' ? 2 : 1
+      const tempPriorityB = b.temperatureRequirement === 'frozen' ? 3 : b.temperatureRequirement === 'cold' ? 2 : 1
+      if (tempPriorityA !== tempPriorityB) return tempPriorityB - tempPriorityA
 
-      return b.weight - a.weight // Heavier boxes first
+      // Heavy boxes first
+      if (Math.abs(a.weight - b.weight) > 10) return b.weight - a.weight
+
+      // Larger boxes first (by volume)
+      const volumeA = a.width * a.height * a.length
+      const volumeB = b.width * b.height * b.length
+      return volumeB - volumeA
     })
   }
 
-  private async findBestPosition(box: Box, placedBoxes: Box[]): Promise<{ x: number; y: number; z: number } | null> {
-    let bestPosition: { x: number; y: number; z: number } | null = null
-    let bestScore = -Infinity
+  // Animation and callback support
+  onPlacementUpdate(callback: (boxes: Box[], progress: number) => void): void {
+    this.animationCallbacks.push(callback)
+  }
 
-    const candidatePositions = this.generateCandidatePositions(box, { boxes: placedBoxes } as PlacementState) // Pass placedBoxes as PlacementState
+  onPhysicsStep(callback: (boxes: Box[], stats: any) => void): void {
+    // Placeholder for physics step callbacks
+  }
 
-    for (const position of candidatePositions) {
-      if (!this.isValidPosition(box, position, { boxes: placedBoxes } as PlacementState)) { // Pass placedBoxes as PlacementState
-        continue
+  private triggerProgressCallback(boxes: Box[], progress: number): void {
+    this.animationCallbacks.forEach(callback => {
+      try {
+        callback(boxes, progress)
+      } catch (error) {
+        console.warn('Progress callback error:', error)
       }
+    })
+  }
 
-      // Basic score for now - consider center of truck
-      let score = -Math.abs(position.x) - Math.abs(position.z)
+  getStateGraph(): GraphStateEncoder {
+    return this.graphEncoder
+  }
 
-      // Add score for lower positions
-      score -= position.y * 0.5
-
-      // Check support
-      let supportScore = 0
-      for (const placedBox of placedBoxes) {
-        if (placedBox.position.y + placedBox.height / 2 < position.y - box.height / 2) {
-          // Box is below, calculate overlap for support
-          const overlapX = Math.max(0, Math.min(position.x + box.width / 2, placedBox.position.x + placedBox.width / 2) - Math.max(position.x - box.width / 2, placedBox.position.x - placedBox.width / 2))
-          const overlapZ = Math.max(0, Math.min(position.z + box.length / 2, placedBox.position.z + placedBox.length / 2) - Math.max(position.z - box.length / 2, placedBox.position.z - placedBox.length / 2))
-          supportScore += overlapX * overlapZ
-        }
-      }
-      score += supportScore * 0.1
-
-      if (score > bestScore) {
-        bestScore = score
-        bestPosition = position
-      }
-    }
-
-    return bestPosition
+  getProgress(): number {
+    return this.placementProgress
   }
 }
