@@ -1,0 +1,57 @@
+Prompt: Simulate Visible Physics with RL-Inspired Box Placement & Non-Intrusive UI Panel
+Refactor the box arrangement simulation system to ensure real-time physics effects are clearly visible when the simulation starts. Despite correct inputs (gravity, speed, acceleration, turning force, and braking force), there is no visible dynamic response from the boxes. The simulation must:
+
+Apply and visually reflect all physical forces via Rapier.js or Ammo.js (e.g., boxes should slide, tilt, shift or fall with turning/braking)
+
+Avoid silently simulating without perceptible outcomes
+
+📈 Physics Simulation Requirements:
+Forces must be physically realistic and cause observable effects on the boxes:
+
+Gravity: Ensures downward pressure and stacking realism
+
+Acceleration & Braking: Boxes should shift forward/backward
+
+Turning Force: Lateral movement or tipping due to centrifugal effect
+
+Speed: Multiplies inertia, amplifies instability
+
+All physics outcomes should influence the real-time box placement scoring.
+
+🧠 Advanced Placement: Markov Chain-based Strategy (RL Inspired)
+Replace static heuristics with a Markov Chain–based placement strategy, inspired by Reinforcement Learning (RL). Specifically:
+
+Model the state as a partial box configuration: S = [b₁, b₂, ..., bₖ]
+
+At each step, transition to a new state S' by placing the next box with some probability
+
+The transition probabilities reflect:
+
+Box stability in that position
+
+Proximity to frozen zones (avoidance)
+
+Physical balance after movement
+
+Use Monte Carlo rollouts or stochastic scoring to simulate N-step outcomes and select optimal placements
+
+This enables exploration of probabilistic trajectories in box placement, trading off between safety, accessibility, and spatial efficiency.
+
+❄️ Cold Storage Zone Constraint:
+Several boxes are penetrating the frozen/ice storage zones within the truck. Enforce the following:
+
+Frozen zones must be treated as inaccessible during placement
+
+Add collision boundaries or exclusion masks so no box intersects or violates the frozen partitions
+
+📋 Status Panel Requirements:
+Implement a toggleable Status Panel (open/closable) that does NOT disturb the current UI layout. It should:
+
+Display live feedback: "Applying gravity…", "Braking force triggered", "Box #3 slipped into new position", "State transition: S → S’"
+
+Summarize physical stats: stability score, # of collisions, acceleration vector
+
+Use concise, informative language for debugging and user insight
+
+Keep the panel lightweight (absolute positioned, floating), and ensure zero UI regression or reflow.
+
