@@ -1,0 +1,35 @@
+Enhance the existing PackPilot application by layering in a resilient, AI-driven retail-to-warehouse order recommendation and fulfillment orchestration system—preserving all current UI/box-placement logic as-is—such that retailers sign in, view real-time sold-item dashboards, and automatically trigger shortage alerts that generate order requests; those requests flow into a governed warehouse decision pipeline where each request enters a lifecycle (created → pending approval → accepted/rejected/partially fulfilled → backordered/fulfilled) mediated by configurable approval groups and accept/reject decisions, with every state transition, rationale, and actor captured in an audit trail for traceability. The system must support partial fulfillment, backorders, retries, and escalate unaddressed requests, while the logistics map page is corrected for syntax errors and displays delivery routes with each retailer as the nth stop, integrating shared Walmart route metadata and live location updates. Extend the ER model to reflect these flows with at least the following core entities (new or expanded):
+
+User (User_id, Name, Email, Role, Auth_meta) and Role/Permission for retailers, warehouse agents, and approvers.
+
+Retail_Shop (Shop_id, Name, Address, Geo_Location, Linked_Warehouse_id).
+
+Warehouse (Warehouse_id, Name, Address, Geo_Location, Truck_id).
+
+Item (Item_id, Name, SKU, Unit, Baseline_reorder_threshold).
+
+Inventory_Record (Inventory_id, Warehouse_id, Item_id, Current_stock, Reserved_stock, Last_updated) tracking real and reserved quantities.
+
+Shortage_Alert (Alert_id, Item_id, Shop_id, Triggered_at, Alert_data, Severity, Resolved_flag).
+
+Order_Request (Order_id, Shop_id, Warehouse_id, Created_at, Total_quantity, Status, Priority, Source_alert_id) with statuses like pending, approved, rejected, partial, backordered, fulfilled.
+
+Order_Decision (Decision_id, Order_id, Decider_User_id, Decision_type [accept/reject/modify], Decision_reason, Decision_timestamp) to capture approval/rejection logic and linkage to approval groups.
+
+Approval_Group (Group_id, Name, Rules, Members) and Order_Approval_Hold (Hold_id, Order_id, Violation_rule, Created_at, Required_approvers, Current_state) reflecting patterns from formal approval workflows.
+
+Inventory_Reservation (Reservation_id, Order_id, Item_id, Quantity_reserved, Reserved_at, Expires_at) to enable partial fulfillment and backorder detection.
+
+Fulfillment (Fulfillment_id, Order_id, Item_id, Quantity_shipped, Shipped_at, Shipment_id) and Shipment (Shipment_id, Origin_Warehouse_id, Destination_Shop_id, Created_at, Expected_arrival, Status).
+
+Route_Stop (Route_id, Shipment_id, Stop_number, Shop_id, ETA, Actual_arrival, Status) for nth-stop sequencing on the map.
+
+Location_Update (Update_id, Warehouse_id, Truck_id, Status_Message, Simulation_date, Geo_Location) for live telemetry.
+
+Notification (Notification_id, Target_User_id, Related_entity, Type, Payload, Created_at, Read_flag) feeding real-time UI alerts.
+
+Stock_Movement_History (Movement_id, Item_id, From_location, To_location, Quantity, Movement_type, Timestamp, Triggered_by_order_id) for traceability.
+
+Order_Status_History (History_id, Order_id, Previous_status, New_status, Changed_at, Changed_by_user_id, Comment) to reconstruct lifecycle.
+
+The AI recommendation engine uses sales velocity and current inventory to trigger Shortage_Alerts, which create Order_Requests; those are evaluated against warehouse availability via Inventory_Reservation, routed through approval logic (including escalation if auto-accept conditions fail), and either accepted (leading to reservation and fulfillment/shipment), rejected (with feedback loops to retailer), or partially fulfilled with backorder tracking. All decisions, status changes, and stock movements are immutably logged per audit-trail best practices so recovery, undo, and compliance queries are feasible. Logistics visualization pulls from Shipment → Route_Stop → Location_Update to render the retailer’s position as the nth stop, integrating shared Walmart route metadata for context. Preserve existing UI, animations, and the completed box arrangement subsystem; focus on robust backend schema, consistent state transitions, real-time notification plumbing, and error-handling for edge cases such as concurrent reservation conflicts, stale alerts, approval timeouts, partial shipments, and automatic retries.
