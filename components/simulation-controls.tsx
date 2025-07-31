@@ -10,9 +10,9 @@ import { Play, Square, RotateCcw, Zap } from "lucide-react"
 
 export function SimulationControls() {
   const {
-    isSimulationRunning,
-    simulationSpeed,
-    simulationForces,
+    isSimulationRunning = false,
+    simulationSpeed = 1.0,
+    simulationForces = { acceleration: 0.4, braking: 0.8, turning: 0.5, gravity: 1.0 },
     runSimulation,
     stopSimulation,
     resetSimulation,
@@ -20,7 +20,7 @@ export function SimulationControls() {
     setSimulationForces,
   } = useOptimizationStore()
 
-  const [localForces, setLocalForces] = useState(simulationForces)
+  const [localForces, setLocalForces] = useState(simulationForces || { acceleration: 0.4, braking: 0.8, turning: 0.5, gravity: 1.0 })
 
   const handleForceChange = (type: keyof typeof simulationForces, value: number) => {
     const newForces = { ...localForces, [type]: value }
@@ -65,10 +65,10 @@ export function SimulationControls() {
 
         {/* Simulation Speed */}
         <div>
-          <Label className="text-xs text-muted-foreground">Simulation Speed: {simulationSpeed.toFixed(1)}x</Label>
+          <Label className="text-xs text-muted-foreground">Simulation Speed: {(simulationSpeed || 1.0).toFixed(1)}x</Label>
           <Slider
-            value={[simulationSpeed]}
-            onValueChange={(value) => setSimulationSpeed(value[0])}
+            value={[simulationSpeed || 1.0]}
+            onValueChange={(value) => setSimulationSpeed?.(value[0])}
             max={3.0}
             min={0.1}
             step={0.1}
@@ -79,9 +79,9 @@ export function SimulationControls() {
         {/* Force Settings */}
         <div className="space-y-3">
           <div>
-            <Label className="text-xs text-muted-foreground">Acceleration: {localForces.acceleration.toFixed(1)}g</Label>
+            <Label className="text-xs text-muted-foreground">Acceleration: {(localForces?.acceleration || 0.4).toFixed(1)}g</Label>
             <Slider
-              value={[localForces.acceleration]}
+              value={[localForces?.acceleration || 0.4]}
               onValueChange={(value) => handleForceChange("acceleration", value[0])}
               max={1.0}
               min={0.1}
@@ -91,9 +91,9 @@ export function SimulationControls() {
           </div>
 
           <div>
-            <Label className="text-xs text-muted-foreground">Braking: {localForces.braking.toFixed(1)}g</Label>
+            <Label className="text-xs text-muted-foreground">Braking: {(localForces?.braking || 0.8).toFixed(1)}g</Label>
             <Slider
-              value={[localForces.braking]}
+              value={[localForces?.braking || 0.8]}
               onValueChange={(value) => handleForceChange("braking", value[0])}
               max={1.5}
               min={0.1}
@@ -103,9 +103,9 @@ export function SimulationControls() {
           </div>
 
           <div>
-            <Label className="text-xs text-muted-foreground">Turning: {localForces.turning.toFixed(1)}g</Label>
+            <Label className="text-xs text-muted-foreground">Turning: {(localForces?.turning || 0.5).toFixed(1)}g</Label>
             <Slider
-              value={[localForces.turning]}
+              value={[localForces?.turning || 0.5]}
               onValueChange={(value) => handleForceChange("turning", value[0])}
               max={1.0}
               min={0.1}
@@ -115,9 +115,9 @@ export function SimulationControls() {
           </div>
 
           <div>
-            <Label className="text-xs text-muted-foreground">Gravity: {localForces.gravity.toFixed(1)}x</Label>
+            <Label className="text-xs text-muted-foreground">Gravity: {(localForces?.gravity || 1.0).toFixed(1)}x</Label>
             <Slider
-              value={[localForces.gravity]}
+              value={[localForces?.gravity || 1.0]}
               onValueChange={(value) => handleForceChange("gravity", value[0])}
               max={2.0}
               min={0.1}
