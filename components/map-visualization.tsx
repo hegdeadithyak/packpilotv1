@@ -240,7 +240,7 @@ export default function MapVisualization() {
 
       // Create and inject Google Maps script
       const script = document.createElement("script")
-      script.src = "https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&callback=initGoogleMaps"
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&callback=initGoogleMaps`
       script.async = true
       script.defer = true
       script.onerror = () => {
@@ -708,14 +708,14 @@ export default function MapVisualization() {
             const trafficDelay = (firstLeg.duration_in_traffic.value - firstLeg.duration!.value) / 60
             trafficInfo =
                 trafficDelay > 5
-                    ? ${Math.round(trafficDelay)} min delay due to traffic
+                    ? `${Math.round(trafficDelay)} min delay due to traffic`
                     : "No significant traffic delays"
           }
 
           // Build route sequence starting with warehouse
           const routeNames = [
             "Warehouse: " + warehouseLocation.name.split("#")[0],
-            ...selectedStores.map((store, index) => Stop ${index + 1}: ${store.name.split("#")[0]}),
+            ...selectedStores.map((store, index) => `Stop ${index + 1}: ${store.name.split("#")[0]}`),
             "Return: " + warehouseLocation.name.split("#")[0],
           ]
 
@@ -724,10 +724,10 @@ export default function MapVisualization() {
             totalDuration: durationText,
             route: routeNames,
             trafficInfo: trafficInfo || undefined,
-            weatherInfo: weatherData ? ${weatherData.temperature}°F, ${weatherData.condition} : undefined,
+            weatherInfo: weatherData ? `${weatherData.temperature}°F, ${weatherData.condition}` : undefined,
           })
         } else {
-          throw new Error(Directions request failed: ${status})
+          throw new Error(`Directions request failed: ${status}`)
         }
       })
     } catch (error) {
@@ -771,7 +771,7 @@ export default function MapVisualization() {
                 setError({
                   type: "places",
                   message: "Search failed",
-                  details: Places API error: ${status},
+                  details: `Places API error: ${status}`,
                 })
               }
             }
