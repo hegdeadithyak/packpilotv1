@@ -1,0 +1,115 @@
+🧠 Architectural Overview
+1. Graph‑based State Encoding
+Build a support/access graph where each box or candidate placement becomes a node.
+
+Edges express relationships: support (stacking), adjacency (neighbors), accessibility (reachable paths).
+
+Annotate each node with heuristics: isStable, isAccessible, box ID, dimensions, critical flags (fragile, temperature zone proximity).
+
+2. MCTS Over Graph‑Enhanced States
+Use MCTS to simulate placement sequences:
+
+Select from root based on UCB.
+
+Expand by placing a new box into plausible candidate nodes.
+
+Simulate by auto‑placing remaining boxes heuristically or via random rollout.
+
+Backpropagate a combined reward (stability, safety, optimization).
+
+At end, choose child of root with the highest visit count or average reward.
+
+🛠️ Integration Plan in Your Codebase
+A. Graph Module
+Create a lightweight graph utility:
+
+ts
+Copy
+Edit
+interface GraphNode {
+  id: string;
+  box?: Box; // existing or candidate
+  position?: Pos;
+  neighbors: Set<string>;
+  isAccessible: boolean;
+  isStable: boolean;
+  zoneMatch: boolean;
+}
+
+interface StateGraph {
+  nodes: Map<string, GraphNode>;
+  addNode(node: GraphNode): void;
+  addEdge(from: string, to: string): void;
+  annotate(box: Box, position: Pos): GraphNode;
+}
+annotate(...) builds nodes for placed boxes and candidate positions.
+
+After placement, rebuild or update StateGraph to reflect new layout.
+
+B. MCTS Module
+ts
+Copy
+Edit
+interface MCTSNode {
+  graph: StateGraph;
+  stateBoxes: Box[];
+  parent?: MCTSNode;
+  action?: { box: Box; position: Pos };
+  visits: number;
+  totalReward: number;
+  children: MCTSNode[];
+}
+Key functions:
+
+select(node): MCTSNode using UCB1 = Q / N + c * sqrt(ln(parent.N) / N)
+
+expand(node): MCTSNode by picking an untried action (box + candidate node)
+
+simulate(node): number – place remaining boxes randomly or via your evaluatePosition heuristic
+
+backpropagate(node, reward): void
+
+C. Optimize Flow via Zustand
+Integrate MCTS into your optimizeLayout action:
+
+ts
+Copy
+Edit
+optimizeLayout: () => {
+  const state = get();
+  const root = buildRootMCTSNode(state.boxes, state.truckDimensions);
+  const bestChild = runMCTS(root, 200 /* or dynamic based on box count */);
+  const optimized = bestChild.stateBoxes;
+  const scores = calculateAllScores(optimized, state.truckDimensions);
+  const seq = generateOptimalLoadingSequence(optimized);
+  set({
+    boxes: optimized,
+    stabilityScore: scores.stability,
+    safetyScore: scores.safety,
+    optimizationScore: scores.optimization,
+    loadingSequence: seq
+  });
+}
+🔄 Pattern Recognition Note
+Graph-based encoding is conceptually aligned with modern graph neural nets: encoding spatial relationships, support, and access.
+
+MCTS parallels sampling in reinforcement learning, using rollout-based assessment rather than greedy heuristics.
+
+Think of your current findBestPosition → evaluatePosition logic as the “rollout policy”— your lightweight simulator.
+
+✅ Key Takeaways
+Graph state captures structural relationships, making your placement policy smarter and more explainable.
+
+MCTS elevates placement from greedy heuristics to lookahead-aware sequencing— ideal for avoiding “deadlock” placements or unstable stacking.
+
+Upgrade your existing optimizeLayout without rewriting other parts: graph + tree strategy can sit atop your current scoring/evaluation functions.
+
+📌 Action Items
+Step	Task
+1	Abstract current placement/evaluation logic into reusable modules (simulatePlacement, evaluateBoxScore)
+2	Implement graph builder: generate nodes for placed boxes and free‑space candidates
+3	Create MCTS node and core loop (select → expand → simulate → backpropagate)
+4	Plug MCTS into your Zustand store’s optimizeLayout, replacing heuristic sort & greedy pack
+5	Validate by visualizing search tree stats (visit count, reward), compare result vs heuristic baseline
+6	Tune rollout depth (# of random placements), exploration parameter c, and scoring weights
+
