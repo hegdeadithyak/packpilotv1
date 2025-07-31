@@ -75,7 +75,7 @@ export function StatusPanel() {
     }
   }, [physicsStats])
 
-  // Simulate Markov state transitions
+  // Simulate Markov state transitions with MCTS integration
   useEffect(() => {
     if (boxes.length > 0) {
       const newStateId = `S${boxes.length}`
@@ -92,6 +92,11 @@ export function StatusPanel() {
           // Check for risky placements
           if (latestBox.position.y > 3.0) {
             addMessage(`Warning: Box #${latestBox.id} placed at risky height`, 'warning')
+          }
+          
+          // MCTS-specific feedback
+          if (boxes.length <= 15) {
+            addMessage(`MCTS node explored - evaluating placement quality`, 'info')
           }
         }
       }

@@ -308,7 +308,7 @@ export function PhysicsPanel() {
               onClick={findOptimalPlacement}
               variant="outline"
             >
-              Find Optimal Placement (RL)
+              Find Optimal Placement (MCTS)
             </Button>
           </div>
 
