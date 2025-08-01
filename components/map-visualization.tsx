@@ -65,7 +65,7 @@ const walmartStorePool = [
   },
   {
     id: "walmart_5",
-    name: "Walmart Supercenter #1800",
+    name: "Walmart_Supercenter #1800",
     address: "3500 Texas Highway 6, Sugar Land, TX 77478",
     coordinates: { lat: 29.5997, lng: -95.6394 },
     placeId: "ChIJQyFHdkW8QIYRtLsVKnAFcQ3",
@@ -109,6 +109,7 @@ interface RouteInfo {
   route: string[]
   trafficInfo?: string
   weatherInfo?: string
+  etaToFirstStop?: string // Added ETA to first stop
 }
 
 interface WeatherData {
@@ -139,6 +140,7 @@ type GoogleMap = any
 type GoogleMapsService = any
 type GoogleMapsMarker = any
 type GoogleMapsInfoWindow = any
+type GoogleMapsPolyline = any // Added for drawing the moving object's path
 
 export default function MapVisualization() {
   // Map and Google APIs references
@@ -164,6 +166,14 @@ export default function MapVisualization() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
 
+  // Moving object state
+  const [movingObjectMarker, setMovingObjectMarker] = useState<GoogleMapsMarker | null>(null)
+  const [movingObjectPath, setMovingObjectPath] = useState<GoogleMapsPolyline | null>(null)
+  const [animationIntervalId, setAnimationIntervalId] = useState<NodeJS.Timeout | null>(null)
+  const [currentPathIndex, setCurrentPathIndex] = useState(0)
+  const [pathCoordinates, setPathCoordinates] = useState<any[]>([])
+  const animationSpeed = 500; // Milliseconds per step (adjust for faster/slower)
+
   // Search functionality
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<any[]>([])
@@ -173,9 +183,10 @@ export default function MapVisualization() {
   const [routeOptimizationEnabled, setRouteOptimizationEnabled] = useState(true)
   const [weatherOverlayEnabled, setWeatherOverlayEnabled] = useState(true)
   const [warehouseOverlayEnabled, setWarehouseOverlayEnabled] = useState(true)
+  const [showMovingObject, setShowMovingObject] = useState(false) // Toggle for moving object
 
   // Google Maps API key - Replace with your actual API key
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyBHSNMm74onzOin26VZqzPcDvqAMNqFNMs"
+  const apiKey = process.env.NEXT_PUBLIC_Maps_API_KEY || "AIzaSyBHSNMm74onzOin26VZqzPcDvqAMNqFNMs"
 
   /**
    * Initialize Google Maps on component mount
@@ -186,7 +197,7 @@ export default function MapVisualization() {
       setError({
         type: "api",
         message: "Google Maps API key not configured",
-        details: "Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY environment variable",
+        details: "Please set NEXT_PUBLIC_Maps_API_KEY environment variable",
       })
       setIsLoading(false)
       return
@@ -428,8 +439,8 @@ export default function MapVisualization() {
 
     const warehouseIcon = {
       url:
-          "data:image/svg+xml;charset=UTF-8," +
-          encodeURIComponent(`
+        "data:image/svg+xml;charset=UTF-8," +
+        encodeURIComponent(`
         <svg width="50" height="50" xmlns="http://www.w3.org/2000/svg">
           <circle cx="25" cy="25" r="23" fill="#3b82f6" stroke="#1e40af" strokeWidth="2"/>
           <path d="M10 18h30v14H10z" fill="white"/>
@@ -475,18 +486,18 @@ export default function MapVisualization() {
    * Creates animated truck icon that moves along the route
    */
   const addTruckMarker = useCallback(
-      (position: any) => {
-        if (!map || !window.google) return
+    (position: any) => {
+      if (!map || !window.google) return
 
-        // Remove existing truck marker
-        if (truckMarker) {
-          truckMarker.setMap(null)
-        }
+      // Remove existing truck marker
+      if (truckMarker) {
+        truckMarker.setMap(null)
+      }
 
-        const truckIcon = {
-          url:
-              "data:image/svg+xml;charset=UTF-8," +
-              encodeURIComponent(`
+      const truckIcon = {
+        url:
+          "data:image/svg+xml;charset=UTF-8," +
+          encodeURIComponent(`
         <svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
           <circle cx="20" cy="20" r="18" fill="#10b981" stroke="#059669" strokeWidth="2"/>
           <path d="M8 16h8v8H8zm10-2h6v4h-6zm8 2h4v8h-4z" fill="white"/>
@@ -495,20 +506,20 @@ export default function MapVisualization() {
           <text x="20" y="12" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">🚛</text>
         </svg>
       `),
-          scaledSize: new window.google.maps.Size(40, 40),
-          anchor: new window.google.maps.Point(20, 20),
-        }
+        scaledSize: new window.google.maps.Size(40, 40),
+        anchor: new window.google.maps.Point(20, 20),
+      }
 
-        const marker = new window.google.maps.Marker({
-          position: position,
-          map: map,
-          icon: truckIcon,
-          title: "Delivery Truck",
-          zIndex: 1000,
-        })
+      const marker = new window.google.maps.Marker({
+        position: position,
+        map: map,
+        icon: truckIcon,
+        title: "Delivery Truck",
+        zIndex: 1000,
+      })
 
-        const infoWindow = new window.google.maps.InfoWindow({
-          content: `
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: `
         <div style="color: #1f2937; padding: 8px; min-width: 200px; font-family: system-ui;">
           <h4 style="margin: 0 0 8px 0; color: #10b981; font-weight: bold;">🚛 Delivery Vehicle</h4>
           <p style="margin: 0; font-size: 14px;">Currently on route for deliveries</p>
@@ -517,16 +528,92 @@ export default function MapVisualization() {
           </div>
         </div>
       `,
-        })
+      })
 
-        marker.addListener("click", () => {
-          infoWindow.open(map, marker)
-        })
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker)
+      })
 
-        setTruckMarker(marker)
-      },
-      [map, truckMarker],
+      setTruckMarker(marker)
+    },
+    [map, truckMarker],
   )
+
+  /**
+   * Add a small moving object marker and animate it along the route.
+   */
+  const addMovingObject = useCallback(
+    (path: any[], eta: string) => {
+      if (!map || !window.google || path.length === 0) return
+
+      // Clear previous animation and marker
+      if (animationIntervalId) clearInterval(animationIntervalId)
+      if (movingObjectMarker) movingObjectMarker.setMap(null)
+      if (movingObjectPath) movingObjectPath.setMap(null)
+
+      setPathCoordinates(path)
+      setCurrentPathIndex(0)
+
+      const objectIcon = {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        fillColor: "#FF0000", // Red color for the moving object
+        fillOpacity: 1,
+        strokeWeight: 0,
+        scale: 6,
+      };
+
+      const marker = new window.google.maps.Marker({
+        position: path[0],
+        map: map,
+        icon: objectIcon,
+        title: "Approaching Vehicle",
+        zIndex: 1001,
+      });
+
+      const infoWindow = new window.google.maps.InfoWindow({
+        content: `
+          <div style="color: #1f2937; padding: 8px; min-width: 180px; font-family: system-ui;">
+            <h4 style="margin: 0 0 8px 0; color: #FF0000; font-weight: bold;">🚗 Approaching Node 1</h4>
+            <p style="margin: 0; font-size: 14px;">ETA: <strong>${eta}</strong></p>
+          </div>
+        `,
+      });
+
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker);
+      });
+
+      setMovingObjectMarker(marker);
+
+      const line = new window.google.maps.Polyline({
+        path: [],
+        geodesic: true,
+        strokeColor: "#FF0000",
+        strokeOpacity: 0.8,
+        strokeWeight: 4,
+        map: map,
+      });
+      setMovingObjectPath(line);
+
+
+      let currentIndex = 0;
+      const animate = () => {
+        if (currentIndex < path.length) {
+          marker.setPosition(path[currentIndex]);
+          const currentPath = line.getPath();
+          currentPath.push(path[currentIndex]); // Add point to the drawn path
+          line.setPath(currentPath);
+          currentIndex++;
+        } else {
+          clearInterval(animationIntervalId!);
+        }
+      };
+
+      const interval = setInterval(animate, animationSpeed);
+      setAnimationIntervalId(interval);
+    },
+    [map, movingObjectMarker, movingObjectPath, animationIntervalId, animationSpeed],
+  );
 
   /**
    * Fetch weather data simulation
@@ -567,6 +654,15 @@ export default function MapVisualization() {
         truckMarker.setMap(null)
         setTruckMarker(null)
       }
+      // Clear moving object and its path
+      if (animationIntervalId) clearInterval(animationIntervalId);
+      if (movingObjectMarker) movingObjectMarker.setMap(null);
+      if (movingObjectPath) movingObjectPath.setMap(null);
+      setMovingObjectMarker(null);
+      setMovingObjectPath(null);
+      setPathCoordinates([]);
+      setCurrentPathIndex(0);
+
 
       // Randomly select 4 stores
       const shuffled = [...walmartStorePool].sort(() => 0.5 - Math.random())
@@ -585,43 +681,43 @@ export default function MapVisualization() {
         details: error instanceof Error ? error.message : "Unknown error",
       })
     }
-  }, [map, markers, truckMarker])
+  }, [map, markers, truckMarker, animationIntervalId, movingObjectMarker, movingObjectPath])
 
   /**
    * Add store markers to the map with custom styling
    * Creates numbered markers for each selected store
    */
   const addStoreMarkers = useCallback(
-      (stores: WalmartLocation[]) => {
-        if (!map || !window.google) return
+    (stores: WalmartLocation[]) => {
+      if (!map || !window.google) return
 
-        const newMarkers: any[] = []
+      const newMarkers: any[] = []
 
-        stores.forEach((store, index) => {
-          // Create custom numbered marker icon
-          const storeIcon = {
-            url:
-                "data:image/svg+xml;charset=UTF-8," +
-                encodeURIComponent(`
+      stores.forEach((store, index) => {
+        // Create custom numbered marker icon
+        const storeIcon = {
+          url:
+            "data:image/svg+xml;charset=UTF-8," +
+            encodeURIComponent(`
           <svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">
             <circle cx="20" cy="20" r="18" fill="#f97316" stroke="#ea580c" strokeWidth="2"/>
             <text x="20" y="26" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">${index + 1}</text>
           </svg>
         `),
-            scaledSize: new window.google.maps.Size(40, 40),
-            anchor: new window.google.maps.Point(20, 20),
-          }
+          scaledSize: new window.google.maps.Size(40, 40),
+          anchor: new window.google.maps.Point(20, 20),
+        }
 
-          const marker = new window.google.maps.Marker({
-            position: store.coordinates,
-            map: map,
-            icon: storeIcon,
-            title: store.name,
-          })
+        const marker = new window.google.maps.Marker({
+          position: store.coordinates,
+          map: map,
+          icon: storeIcon,
+          title: store.name,
+        })
 
-          // Create info window with store details
-          const infoWindow = new window.google.maps.InfoWindow({
-            content: `
+        // Create info window with store details
+        const infoWindow = new window.google.maps.InfoWindow({
+          content: `
           <div style="color: #1f2937; padding: 12px; min-width: 280px; font-family: system-ui;">
             <h3 style="margin: 0 0 8px 0; color: #f97316; font-weight: bold; font-size: 16px;">
               🏪 ${store.name}
@@ -633,18 +729,18 @@ export default function MapVisualization() {
             </div>
           </div>
         `,
-          })
-
-          marker.addListener("click", () => {
-            infoWindow.open(map, marker)
-          })
-
-          newMarkers.push(marker)
         })
 
-        setMarkers(newMarkers)
-      },
-      [map],
+        marker.addListener("click", () => {
+          infoWindow.open(map, marker)
+        })
+
+        newMarkers.push(marker)
+      })
+
+      setMarkers(newMarkers)
+    },
+    [map],
   )
 
   /**
@@ -656,6 +752,16 @@ export default function MapVisualization() {
 
     setIsCalculatingRoute(true)
     setError(null)
+
+    // Clear previous animation and marker before calculating new route
+    if (animationIntervalId) clearInterval(animationIntervalId);
+    if (movingObjectMarker) movingObjectMarker.setMap(null);
+    if (movingObjectPath) movingObjectPath.setMap(null);
+    setMovingObjectMarker(null);
+    setMovingObjectPath(null);
+    setPathCoordinates([]);
+    setCurrentPathIndex(0);
+
 
     try {
       // Create waypoints from all selected stores
@@ -697,6 +803,19 @@ export default function MapVisualization() {
             totalDuration += leg.duration?.value || 0
           })
 
+          // Calculate ETA to the first selected store (node 1)
+          let etaToFirstStop: string | undefined;
+          if (route.legs.length > 0 && selectedStores.length > 0) {
+            const firstLegDuration = route.legs[0].duration_in_traffic ? route.legs[0].duration_in_traffic.value : route.legs[0].duration.value;
+            etaToFirstStop = `${Math.round(firstLegDuration / 60)} minutes`;
+
+            // Extract path for the moving object from warehouse to the first stop
+            const pathForMovingObject = route.legs[0].steps.reduce((acc: any[], step: { path: any[]; }) => acc.concat(step.path), []);
+            if (showMovingObject) {
+              addMovingObject(pathForMovingObject, etaToFirstStop);
+            }
+          }
+
           // Convert to readable format
           const distanceText = (totalDistance / 1609.34).toFixed(1) + " miles"
           const durationText = Math.round(totalDuration / 60) + " minutes"
@@ -707,9 +826,9 @@ export default function MapVisualization() {
           if (firstLeg.duration_in_traffic) {
             const trafficDelay = (firstLeg.duration_in_traffic.value - firstLeg.duration!.value) / 60
             trafficInfo =
-                trafficDelay > 5
-                    ? `${Math.round(trafficDelay)} min delay due to traffic`
-                    : "No significant traffic delays"
+              trafficDelay > 5
+                ? `${Math.round(trafficDelay)} min delay due to traffic`
+                : "No significant traffic delays"
           }
 
           // Build route sequence starting with warehouse
@@ -725,6 +844,7 @@ export default function MapVisualization() {
             route: routeNames,
             trafficInfo: trafficInfo || undefined,
             weatherInfo: weatherData ? `${weatherData.temperature}°F, ${weatherData.condition}` : undefined,
+            etaToFirstStop: etaToFirstStop, // Set ETA here
           })
         } else {
           throw new Error(`Directions request failed: ${status}`)
@@ -740,54 +860,55 @@ export default function MapVisualization() {
     } finally {
       setIsCalculatingRoute(false)
     }
-  }, [directionsService, directionsRenderer, selectedStores, routeOptimizationEnabled, weatherData, addTruckMarker])
+  }, [directionsService, directionsRenderer, selectedStores, routeOptimizationEnabled, weatherData, addTruckMarker, addMovingObject, showMovingObject, animationIntervalId, movingObjectMarker, movingObjectPath])
+
 
   /**
    * Search for places using Google Places API
    * Extensible search functionality for custom locations
    */
   const searchPlaces = useCallback(
-      async (query: string) => {
-        if (!placesService || query.length < 3) {
-          setSearchResults([])
-          return
+    async (query: string) => {
+      if (!placesService || query.length < 3) {
+        setSearchResults([])
+        return
+      }
+
+      setIsSearching(true)
+      setError(null)
+
+      try {
+        const request = {
+          query: query,
+          fields: ["name", "geometry", "formatted_address", "place_id"],
         }
 
-        setIsSearching(true)
-        setError(null)
-
-        try {
-          const request = {
-            query: query,
-            fields: ["name", "geometry", "formatted_address", "place_id"],
-          }
-
-          placesService.textSearch(request, (results: any, status: any) => {
-            if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-              setSearchResults(results.slice(0, 5))
-            } else {
-              setSearchResults([])
-              if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-                setError({
-                  type: "places",
-                  message: "Search failed",
-                  details: `Places API error: ${status}`,
-                })
-              }
+        placesService.textSearch(request, (results: any, status: any) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+            setSearchResults(results.slice(0, 5))
+          } else {
+            setSearchResults([])
+            if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+              setError({
+                type: "places",
+                message: "Search failed",
+                details: `Places API error: ${status}`,
+              })
             }
-            setIsSearching(false)
-          })
-        } catch (error) {
-          console.error("Search error:", error)
-          setError({
-            type: "places",
-            message: "Search failed",
-            details: error instanceof Error ? error.message : "Unknown search error",
-          })
+          }
           setIsSearching(false)
-        }
-      },
-      [placesService],
+        })
+      } catch (error) {
+        console.error("Search error:", error)
+        setError({
+          type: "places",
+          message: "Search failed",
+          details: error instanceof Error ? error.message : "Unknown search error",
+        })
+        setIsSearching(false)
+      }
+    },
+    [placesService],
   )
 
   /**
@@ -795,57 +916,57 @@ export default function MapVisualization() {
    * Extensibility feature for adding custom waypoints
    */
   const addCustomLocation = useCallback(
-      (place: any) => {
-        if (!map || !place.geometry?.location) return
+    (place: any) => {
+      if (!map || !place.geometry?.location) return
 
-        try {
-          const customIcon = {
-            url:
-                "data:image/svg+xml;charset=UTF-8," +
-                encodeURIComponent(`
+      try {
+        const customIcon = {
+          url:
+            "data:image/svg+xml;charset=UTF-8," +
+            encodeURIComponent(`
           <svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
             <circle cx="16" cy="16" r="14" fill="#10b981" stroke="#059669" strokeWidth="2"/>
             <path d="M16 8l3 6h5l-4 3 1.5 6-5.5-4-5.5 4L12 17l-4-3h5l3-6z" fill="white"/>
           </svg>
         `),
-            scaledSize: new window.google.maps.Size(32, 32),
-            anchor: new window.google.maps.Point(16, 16),
-          }
+          scaledSize: new window.google.maps.Size(32, 32),
+          anchor: new window.google.maps.Point(16, 16),
+        }
 
-          const marker = new window.google.maps.Marker({
-            position: place.geometry.location,
-            map: map,
-            icon: customIcon,
-            title: place.name,
-          })
+        const marker = new window.google.maps.Marker({
+          position: place.geometry.location,
+          map: map,
+          icon: customIcon,
+          title: place.name,
+        })
 
-          const infoWindow = new window.google.maps.InfoWindow({
-            content: `
+        const infoWindow = new window.google.maps.InfoWindow({
+          content: `
           <div style="color: #1f2937; padding: 8px; min-width: 200px;">
             <h4 style="margin: 0 0 8px 0; color: #10b981; font-weight: bold;">📍 Custom Location</h4>
             <p style="margin: 0; font-size: 14px;">${place.formatted_address || place.name}</p>
           </div>
         `,
-          })
+        })
 
-          marker.addListener("click", () => {
-            infoWindow.open(map, marker)
-          })
+        marker.addListener("click", () => {
+          infoWindow.open(map, marker)
+        })
 
-          map.setCenter(place.geometry.location)
-          map.setZoom(14)
-          setSearchResults([])
-          setSearchQuery("")
-        } catch (error) {
-          console.error("Error adding custom location:", error)
-          setError({
-            type: "api",
-            message: "Failed to add location",
-            details: error instanceof Error ? error.message : "Unknown error",
-          })
-        }
-      },
-      [map],
+        map.setCenter(place.geometry.location)
+        map.setZoom(14)
+        setSearchResults([])
+        setSearchQuery("")
+      } catch (error) {
+        console.error("Error adding custom location:", error)
+        setError({
+          type: "api",
+          message: "Failed to add location",
+          details: error instanceof Error ? error.message : "Unknown error",
+        })
+      }
+    },
+    [map],
   )
 
   /**
@@ -868,365 +989,403 @@ export default function MapVisualization() {
 
   const clearError = () => setError(null)
 
+  // Effect to manage visibility of the moving object
+  useEffect(() => {
+    if (!showMovingObject && movingObjectMarker) {
+      movingObjectMarker.setMap(null);
+      if (animationIntervalId) clearInterval(animationIntervalId);
+      setAnimationIntervalId(null);
+    } else if (showMovingObject && routeInfo && pathCoordinates.length > 0 && !movingObjectMarker) {
+      // Re-add and restart animation if toggled on and route data exists
+      addMovingObject(pathCoordinates, routeInfo.etaToFirstStop || 'N/A');
+    }
+  }, [showMovingObject, movingObjectMarker, animationIntervalId, routeInfo, pathCoordinates, addMovingObject]);
+
+
   return (
-      <div className="w-full h-screen relative bg-background">
-        {/* Map Container */}
-        <div ref={mapRef} className="w-full h-full" style={{ background: "hsl(var(--muted))" }} />
+    <div className="w-full h-screen relative bg-background">
+      {/* Map Container */}
+      <div ref={mapRef} className="w-full h-full" style={{ background: "hsl(var(--muted))" }} />
 
-        {/* Loading Overlay */}
-        {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-50">
-              <div className="text-center space-y-4">
-                <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                <p className="text-foreground text-lg font-semibold">Loading Google Maps...</p>
-                <p className="text-muted-foreground text-sm">
-                  Initializing route planner with real warehouse and store locations...
-                </p>
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-50">
+          <div className="text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-foreground text-lg font-semibold">Loading Google Maps...</p>
+            <p className="text-muted-foreground text-sm">
+              Initializing route planner with real warehouse and store locations...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 max-w-md">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <div className="font-semibold">{error.message}</div>
+                {error.details && <div className="text-sm opacity-90">{error.details}</div>}
+                <Button size="sm" variant="outline" onClick={clearError} className="mt-2 bg-transparent">
+                  Dismiss
+                </Button>
               </div>
-            </div>
-        )}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
-        {/* Error Display */}
-        {error && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-40 max-w-md">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <div className="font-semibold">{error.message}</div>
-                    {error.details && <div className="text-sm opacity-90">{error.details}</div>}
-                    <Button size="sm" variant="outline" onClick={clearError} className="mt-2 bg-transparent">
-                      Dismiss
-                    </Button>
-                  </div>
-                </AlertDescription>
-              </Alert>
-            </div>
-        )}
-
-        {/* Control Panel - Left Side */}
-        <div className="absolute top-4 left-4 z-30 w-96 space-y-4">
-          {/* Main Controls Card */}
-          <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-primary">
-                <Navigation className="h-5 w-5 mr-2" />
-                Walmart Route Optimizer
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Search Bar */}
-              <div className="relative">
-                <Input
-                    type="text"
-                    placeholder="Search for additional locations..."
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value)
-                      searchPlaces(e.target.value)
-                    }}
-                    className="pl-10 bg-background border-border"
-                />
-                <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                  {isSearching ? (
-                      <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                  ) : (
-                      <Search className="h-4 w-4 text-primary" />
-                  )}
-                </div>
-                {/* Search Results Dropdown */}
-                {searchResults.length > 0 && (
-                    <Card className="absolute z-10 mt-2 w-full bg-card border-border">
-                      <CardContent className="p-2 max-h-60 overflow-y-auto">
-                        {searchResults.map((result, index) => (
-                            <div
-                                key={result.place_id || index}
-                                className="p-2 text-sm hover:bg-accent rounded cursor-pointer flex items-center space-x-2"
-                                onClick={() => addCustomLocation(result)}
-                            >
-                              <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
-                              <div className="flex-1">
-                                <div className="font-medium text-foreground">{result.name}</div>
-                                <div className="text-xs text-muted-foreground">{result.formatted_address}</div>
-                              </div>
-                            </div>
-                        ))}
-                      </CardContent>
-                    </Card>
+      {/* Control Panel - Left Side */}
+      <div className="absolute top-4 left-4 z-30 w-96 space-y-4">
+        {/* Main Controls Card */}
+        <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center text-primary">
+              <Navigation className="h-5 w-5 mr-2" />
+              Walmart Route Optimizer
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <Input
+                type="text"
+                placeholder="Search for additional locations..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  searchPlaces(e.target.value)
+                }}
+                className="pl-10 bg-background border-border"
+              />
+              <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                {isSearching ? (
+                  <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4 text-primary" />
                 )}
               </div>
+              {/* Search Results Dropdown */}
+              {searchResults.length > 0 && (
+                <Card className="absolute z-10 mt-2 w-full bg-card border-border">
+                  <CardContent className="p-2 max-h-60 overflow-y-auto">
+                    {searchResults.map((result, index) => (
+                      <div
+                        key={result.place_id || index}
+                        className="p-2 text-sm hover:bg-accent rounded cursor-pointer flex items-center space-x-2"
+                        onClick={() => addCustomLocation(result)}
+                      >
+                        <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
+                        <div className="flex-1">
+                          <div className="font-medium text-foreground truncate">{result.name}</div>
+                          <div className="text-xs text-muted-foreground">{result.formatted_address}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex space-x-2">
-                <Button
-                    onClick={selectRandomStores}
-                    disabled={!isLoaded}
-                    variant="outline"
-                    className="flex-1 bg-transparent"
-                >
-                  <Shuffle className="h-4 w-4 mr-2" />
-                  New Route
-                </Button>
-                <Button
-                    onClick={calculateOptimalRoute}
-                    disabled={!isLoaded || selectedStores.length === 0 || isCalculatingRoute}
-                    className="flex-1"
-                >
-                  {isCalculatingRoute ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
+              <Button
+                onClick={selectRandomStores}
+                disabled={!isLoaded}
+                variant="outline"
+                className="flex-1 bg-transparent"
+              >
+                <Shuffle className="h-4 w-4 mr-2" />
+                New Route
+              </Button>
+              <Button
+                onClick={calculateOptimalRoute}
+                disabled={!isLoaded || selectedStores.length === 0 || isCalculatingRoute}
+                className="flex-1"
+              >
+                {isCalculatingRoute ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Route className="h-4 w-4 mr-2" />
+                )}
+                Calculate Route
+              </Button>
+            </div>
+
+            {/* Feature Toggles */}
+            <div className="space-y-3 pt-2 border-t border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Car className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Traffic Layer</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={toggleTrafficLayer} className="h-6 w-10 p-0">
+                  {trafficLayerEnabled ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
                   ) : (
-                      <Route className="h-4 w-4 mr-2" />
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
                   )}
-                  Calculate Route
                 </Button>
               </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Navigation className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Route Optimization</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRouteOptimizationEnabled(!routeOptimizationEnabled)}
+                  className="h-6 w-10 p-0"
+                >
+                  {routeOptimizationEnabled ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Warehouse className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Show Warehouse</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWarehouseOverlayEnabled(!warehouseOverlayEnabled)}
+                  className="h-6 w-10 p-0"
+                >
+                  {warehouseOverlayEnabled ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <CloudSun className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Weather Info</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWeatherOverlayEnabled(!weatherOverlayEnabled)}
+                  className="h-6 w-10 p-0"
+                >
+                  {weatherOverlayEnabled ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Truck className="h-4 w-4 text-primary" />
+                  <span className="text-sm">Animate Delivery</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowMovingObject(!showMovingObject)}
+                  className="h-6 w-10 p-0"
+                >
+                  {showMovingObject ? (
+                    <ToggleRight className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-              {/* Feature Toggles */}
-              <div className="space-y-3 pt-2 border-t border-border">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Car className="h-4 w-4 text-primary" />
-                    <span className="text-sm">Traffic Layer</span>
+        {/* Weather Info Card */}
+        {weatherOverlayEnabled && weatherData && (
+          <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-primary flex items-center">
+                <Thermometer className="h-4 w-4 mr-2" />
+                Current Weather - {weatherData.location}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <span className="text-3xl">{weatherData.icon}</span>
+                  <div>
+                    <div className="text-xl font-semibold text-foreground">{weatherData.temperature}°F</div>
+                    <div className="text-sm text-muted-foreground">{weatherData.condition}</div>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={toggleTrafficLayer} className="h-6 w-10 p-0">
-                    {trafficLayerEnabled ? (
-                        <ToggleRight className="h-5 w-5 text-green-500" />
-                    ) : (
-                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </Button>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Navigation className="h-4 w-4 text-primary" />
-                    <span className="text-sm">Route Optimization</span>
-                  </div>
-                  <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRouteOptimizationEnabled(!routeOptimizationEnabled)}
-                      className="h-6 w-10 p-0"
-                  >
-                    {routeOptimizationEnabled ? (
-                        <ToggleRight className="h-5 w-5 text-green-500" />
-                    ) : (
-                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Warehouse className="h-4 w-4 text-primary" />
-                    <span className="text-sm">Show Warehouse</span>
-                  </div>
-                  <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setWarehouseOverlayEnabled(!warehouseOverlayEnabled)}
-                      className="h-6 w-10 p-0"
-                  >
-                    {warehouseOverlayEnabled ? (
-                        <ToggleRight className="h-5 w-5 text-green-500" />
-                    ) : (
-                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <CloudSun className="h-4 w-4 text-primary" />
-                    <span className="text-sm">Weather Info</span>
-                  </div>
-                  <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setWeatherOverlayEnabled(!weatherOverlayEnabled)}
-                      className="h-6 w-10 p-0"
-                  >
-                    {weatherOverlayEnabled ? (
-                        <ToggleRight className="h-5 w-5 text-green-500" />
-                    ) : (
-                        <ToggleLeft className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </Button>
+                <div className="text-right text-xs text-muted-foreground">
+                  <div>Humidity: {weatherData.humidity}%</div>
+                  <div>Wind: {weatherData.windSpeed} mph</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-
-          {/* Weather Info Card */}
-          {weatherOverlayEnabled && weatherData && (
-              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-primary flex items-center">
-                    <Thermometer className="h-4 w-4 mr-2" />
-                    Current Weather - {weatherData.location}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-3xl">{weatherData.icon}</span>
-                      <div>
-                        <div className="text-xl font-semibold text-foreground">{weatherData.temperature}°F</div>
-                        <div className="text-sm text-muted-foreground">{weatherData.condition}</div>
-                      </div>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <div>Humidity: {weatherData.humidity}%</div>
-                      <div>Wind: {weatherData.windSpeed} mph</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-          )}
-        </div>
-
-        {/* Selected Stores Info - Right Side */}
-        {selectedStores.length > 0 && (
-            <div className="absolute top-4 right-4 z-30 w-80">
-              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-primary flex items-center">
-                    <Store className="h-4 w-4 mr-2" />
-                    Selected Stores ({selectedStores.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 max-h-60 overflow-y-auto">
-                    {/* Warehouse as starting point */}
-                    <div className="flex items-start space-x-3 p-3 bg-primary/10 rounded-lg">
-                      <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold">
-                        🏭
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-foreground truncate">{warehouseLocation.name.split("#")[0]}</div>
-                        <div className="text-xs text-muted-foreground truncate">{warehouseLocation.address}</div>
-                        <div className="text-xs text-primary mt-1">Route Origin</div>
-                      </div>
-                    </div>
-                    {/* Selected stores */}
-                    {selectedStores.map((store, index) => (
-                        <div key={store.id} className="flex items-start space-x-3 p-3 bg-accent/50 rounded-lg">
-                          <div className="flex-shrink-0 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                            {index + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-foreground truncate">{store.name.split("#")[0]}</div>
-                            <div className="text-xs text-muted-foreground truncate">{store.address}</div>
-                            <div className="text-xs text-primary mt-1">Stop {index + 1}</div>
-                          </div>
-                        </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-        )}
-
-        {/* Route Summary Card - Bottom Left */}
-        {routeInfo && (
-            <div className="absolute bottom-4 left-4 z-30">
-              <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg min-w-[320px]">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-primary flex items-center">
-                    <Route className="h-4 w-4 mr-2" />
-                    Optimized Route Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Route Stats */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Navigation className="h-4 w-4 text-primary" />
-                      <div>
-                        <div className="font-semibold text-foreground">{routeInfo.totalDistance}</div>
-                        <div className="text-xs text-muted-foreground">Total Distance</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Clock className="h-4 w-4 text-primary" />
-                      <div>
-                        <div className="font-semibold text-foreground">{routeInfo.totalDuration}</div>
-                        <div className="text-xs text-muted-foreground">Estimated Time</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Truck Status */}
-                  {truckMarker && (
-                      <div className="flex items-center space-x-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <Truck className="h-4 w-4 text-green-600" />
-                        <div className="text-sm text-green-700 dark:text-green-400">
-                          Delivery truck positioned at warehouse
-                        </div>
-                      </div>
-                  )}
-
-                  {/* Traffic and Weather Info */}
-                  {(routeInfo.trafficInfo || routeInfo.weatherInfo) && (
-                      <div className="space-y-2 text-xs">
-                        {routeInfo.trafficInfo && (
-                            <div className="flex items-center space-x-2 text-yellow-600">
-                              <Car className="h-3 w-3" />
-                              <span>{routeInfo.trafficInfo}</span>
-                            </div>
-                        )}
-                        {routeInfo.weatherInfo && (
-                            <div className="flex items-center space-x-2 text-primary">
-                              <CloudSun className="h-3 w-3" />
-                              <span>{routeInfo.weatherInfo}</span>
-                            </div>
-                        )}
-                      </div>
-                  )}
-
-                  {/* Route Sequence */}
-                  <div className="border-t border-border pt-3">
-                    <div className="text-xs text-muted-foreground mb-2">Route Sequence:</div>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {routeInfo.route.map((stop, index) => (
-                          <div key={index} className="flex items-center space-x-2 text-xs">
-                            <span className="text-primary font-bold min-w-[20px]">{index + 1}.</span>
-                            <span className="text-foreground">{stop}</span>
-                          </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-        )}
-
-        {/* API Key Warning - Show if no API key configured */}
-        {!apiKey && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-50">
-              <Card className="border-destructive max-w-md">
-                <CardHeader>
-                  <CardTitle className="text-destructive flex items-center">
-                    <AlertTriangle className="h-5 w-5 mr-2" />
-                    Configuration Required
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 text-sm">
-                    <p className="text-muted-foreground">Google Maps API key is required to use this feature.</p>
-                    <div className="bg-muted p-3 rounded">
-                      <p className="font-medium text-foreground mb-2">Steps to configure:</p>
-                      <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                        <li>Get a Google Maps API key from Google Cloud Console</li>
-                        <li>Enable Maps JavaScript API, Places API, and Directions API</li>
-                        <li>Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY environment variable</li>
-                      </ol>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      For production, use environment variables instead of hardcoding the API key.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
         )}
       </div>
+
+      {/* Selected Stores Info - Right Side */}
+      {selectedStores.length > 0 && (
+        <div className="absolute top-4 right-4 z-30 w-80">
+          <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-primary flex items-center">
+                <Store className="h-4 w-4 mr-2" />
+                Selected Stores ({selectedStores.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {/* Warehouse as starting point */}
+                <div className="flex items-start space-x-3 p-3 bg-primary/10 rounded-lg">
+                  <div className="flex-shrink-0 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-xs font-bold">
+                    🏭
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-foreground truncate">{warehouseLocation.name.split("#")[0]}</div>
+                    <div className="text-xs text-muted-foreground truncate">{warehouseLocation.address}</div>
+                    <div className="text-xs text-primary mt-1">Route Origin</div>
+                  </div>
+                </div>
+                {/* Selected stores */}
+                {selectedStores.map((store, index) => (
+                  <div key={store.id} className="flex items-start space-x-3 p-3 bg-accent/50 rounded-lg">
+                    <div className="flex-shrink-0 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-foreground truncate">{store.name.split("#")[0]}</div>
+                      <div className="text-xs text-muted-foreground truncate">{store.address}</div>
+                      <div className="text-xs text-primary mt-1">Stop {index + 1}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Route Summary Card - Bottom Left */}
+      {routeInfo && (
+        <div className="absolute bottom-4 left-4 z-30">
+          <Card className="backdrop-blur-md bg-card/95 border-border shadow-lg min-w-[320px]">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-primary flex items-center">
+                <Route className="h-4 w-4 mr-2" />
+                Optimized Route Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Route Stats */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center space-x-2">
+                  <Navigation className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="font-semibold text-foreground">{routeInfo.totalDistance}</div>
+                    <div className="text-xs text-muted-foreground">Total Distance</div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <div>
+                    <div className="font-semibold text-foreground">{routeInfo.totalDuration}</div>
+                    <div className="text-xs text-muted-foreground">Estimated Time</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Truck Status */}
+              {truckMarker && (
+                <div className="flex items-center space-x-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <Truck className="h-4 w-4 text-green-600" />
+                  <div className="text-sm text-green-700 dark:text-green-400">
+                    Delivery truck positioned at warehouse
+                  </div>
+                </div>
+              )}
+
+              {routeInfo.etaToFirstStop && (
+                <div className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <Clock className="h-4 w-4 text-blue-600" />
+                  <div className="text-sm text-blue-700 dark:text-blue-400">
+                    ETA to first stop: <strong>{routeInfo.etaToFirstStop}</strong>
+                  </div>
+                </div>
+              )}
+
+              {(routeInfo.trafficInfo || routeInfo.weatherInfo) && (
+                <div className="space-y-2 text-xs">
+                  {routeInfo.trafficInfo && (
+                    <div className="flex items-center space-x-2 text-yellow-600">
+                      <Car className="h-3 w-3" />
+                      <span>{routeInfo.trafficInfo}</span>
+                    </div>
+                  )}
+                  {routeInfo.weatherInfo && (
+                    <div className="flex items-center space-x-2 text-primary">
+                      <CloudSun className="h-3 w-3" />
+                      <span>{routeInfo.weatherInfo}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Route Sequence */}
+              <div className="border-t border-border pt-3">
+                <div className="text-xs text-muted-foreground mb-2">Route Sequence:</div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {routeInfo.route.map((stop, index) => (
+                    <div key={index} className="flex items-center space-x-2 text-xs">
+                      <span className="text-primary font-bold min-w-[20px]">{index + 1}.</span>
+                      <span className="text-foreground">{stop}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!apiKey && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-50">
+          <Card className="border-destructive max-w-md">
+            <CardHeader>
+              <CardTitle className="text-destructive flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2" />
+                Configuration Required
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">Google Maps API key is required to use this feature.</p>
+                <div className="bg-muted p-3 rounded">
+                  <p className="font-medium text-foreground mb-2">Steps to configure:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                    <li>Get a Google Maps API key from Google Cloud Console</li>
+                    <li>Enable Maps JavaScript API, Places API, and Directions API</li>
+                    <li>Set NEXT_PUBLIC_Maps_API_KEY environment variable</li>
+                  </ol>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  For production, use environment variables instead of hardcoding the API key.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
   )
-}
+} 

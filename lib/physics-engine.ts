@@ -16,8 +16,7 @@ export class PhysicsEngine {
 
   async initialize(): Promise<void> {
     try {
-      // Initialize RAPIER physics engine
-      await RAPIER.init()
+      await RAPIER. init()
 
       const gravity = { x: 0.0, y: -9.81, z: 0.0 }
       this.world = new RAPIER.World(gravity)
@@ -25,13 +24,14 @@ export class PhysicsEngine {
       this.initialized = true
       console.log('✅ Physics engine initialized successfully')
     } catch (error) {
-      console.error('❌ Failed to initialize physics engine:', error)
+      console.error('❌ Failed to initialize physics engine:', error) 
       throw error
     }
   }
 
   createTruckContainer(dimensions: { width: number; length: number; height: number }): void {
     if (!this.world || !this.initialized) {
+      console.log(this.world);
       throw new Error('Physics engine not initialized')
     }
 
