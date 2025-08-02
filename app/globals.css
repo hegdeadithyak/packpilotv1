@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 11% 4%;
+    --foreground: 210 40% 98%;
+    --card: 15 5% 6%;
+    --card-foreground: 210 40% 98%;
+    --popover: 15 5% 6%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 100% 50%; /* Blue */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 120 100% 25%; /* Green */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 210 11% 10%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 0 100% 50%; /* Red */
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 210 11% 15%;
+    --input: 210 11% 10%;
+    --ring: 210 100% 50%; /* Blue */
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    background: #0f0f10;         /* updated */
+    min-height: 100vh;
+  }
+}
+
+/* Utility status colours */
+.status-warning {
+  background: linear-gradient(45deg, #f59e0b, #fbbf24);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.7);
+  color: #000;
+  font-weight: 600;
+}
+
+.status-error {
+  background: linear-gradient(45deg, #ef4444, #f87171);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+  color: #fff;
+  font-weight: 600;
+}
+
+.status-success {
+  background: linear-gradient(45deg, #10b981, #34d399);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.7);
+  color: #000;
+  font-weight: 600;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(49, 184, 198, 0.7); }
+  50%      { box-shadow: 0 0 35px rgba(49, 184, 198, 0.9); }
+}
+
+@keyframes spin-glow {
+  0%   { transform: rotate(0deg);   box-shadow: 0 0 10px rgba(49, 184, 198, 0.5); }
+  50%  {                              box-shadow: 0 0 20px rgba(49, 184, 198, 0.8); }
+  100% { transform: rotate(360deg); box-shadow: 0 0 10px rgba(49, 184, 198, 0.5); }
+}
+
+.loading-spinner { animation: spin-glow 1s linear infinite; }
+
+/* Map container & Leaflet dark-theme overrides */
+.map-container {
+  background: #0f0f10;                /* updated */
+  border: 2px solid rgba(49, 184, 198, 0.4);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 30px rgba(49, 184, 198, 0.3);
+}
+
+.leaflet-container          { background: #0f0f10 !important; }  /* updated */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip,
+.leaflet-control             { background: #0f0f10 !important; }  /* updated */
+
+.leaflet-popup-content-wrapper {
+  color: #f1f5f9 !important;
+  border: 2px solid rgba(49, 184, 198, 0.5) !important;
+  box-shadow: 0 0 20px rgba(49, 184, 198, 0.4) !important;
+  border-radius: 0.5rem !important;
+}
+
+.leaflet-control {
+  border: 2px solid rgba(49, 184, 198, 0.4) !important;
+  box-shadow: 0 0 15px rgba(49, 184, 198, 0.3) !important;
+  border-radius: 0.5rem !important;
+}
+.leaflet-control a          { background: #0f0f10 !important; }   /* updated */
+.leaflet-control a          { color: hsl(var(--primary)) !important; border-bottom: 1px solid rgba(49, 184, 198, 0.3) !important; }
+.leaflet-control a:hover    { background: rgba(49, 184, 198, 0.1) !important; box-shadow: 0 0 15px rgba(49, 184, 198, 0.5) !important; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar         { width: 8px; }
+::-webkit-scrollbar-track   { background: #0f0f10; }              /* updated */
+::-webkit-scrollbar-thumb   { background: rgba(49, 184, 198, 0.5); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(49, 184, 198, 0.7); }
+
+/* Message banners */
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+}
+
+.success-message {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
