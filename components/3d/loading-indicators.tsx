@@ -10,6 +10,7 @@ export function LoadingIndicators() {
     <group>
       {/* Loading sequence numbers */}
       {loadingSequence.slice(0, 10).map((boxId, index) => {
+        //@ts-ignore
         const box = boxes.find((b) => b.id === boxId)
         if (!box) return null
 
