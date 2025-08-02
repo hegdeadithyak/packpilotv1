@@ -40,21 +40,36 @@ interface OptimizationState {
   loadingSequence: Box[]
   currentLoadStep: number
 
-  // MCTS State
-  mctsStats: {
-    iterations: number
-    explorationRate: number
-    bestScore: number
-    searchTime: number
-    stateTransitions: number
-  } | null
+  // Temperature Zones
+  temperatureZones: {
+    regular: string[]
+    cold: string[]
+    frozen: string[]
+  }
 
   // Actions
+  loadSampleData: () => void
+  resetToEmpty: () => void
+  initializePhysics: () => void
+  updatePhysics: () => void
   runSimulation: () => void
   stopSimulation: () => void
   resetSimulation: () => void
   setSimulationSpeed: (speed: number) => void
   setSimulationForces: (forces: SimulationForces) => void
+  addBox: (box: Box) => void
+  removeBox: (id: string) => void
+  updateBox: (id: string, updates: Partial<Box>) => void
+  updateBoxPosition: (id: string, position: { x: number; y: number; z: number }) => void
+  setTruckDimensions: (dimensions: { width: number; length: number; height: number }) => void
+  setPhysicsEnabled: (enabled: boolean) => void
+  optimizeLayout: () => void
+  resetLayout: () => void
+  checkCollisions: (boxId: string) => string[]
+  calculateScores: () => void
+  generateLoadingSequence: () => void
+  nextLoadStep: () => void
+  previousLoadStep: () => void
 }
 
 export const useOptimizationStore = create<OptimizationState>((set, get) => ({
@@ -79,8 +94,11 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   optimizationScore: 0,
   loadingSequence: [],
   currentLoadStep: 0,
-
-  mctsStats: null,
+  temperatureZones: {
+    regular: [],
+    cold: [],
+    frozen: [],
+  },
 
   loadSampleData: () => {
     const optimizedBoxes = optimizeBoxPlacement(sampleBoxes, get().truckDimensions)
@@ -149,12 +167,15 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   runSimulation: () => {
     set({ isSimulationRunning: true })
 
-    setTimeout(() => {
+    const updateLoop = () => {
       const state = get()
       if (state.isSimulationRunning) {
         get().updatePhysics()
+        setTimeout(updateLoop, 100 / state.simulationSpeed)
       }
-    }, 100)
+    }
+
+    updateLoop()
   },
 
   stopSimulation: () => {
@@ -217,12 +238,16 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
     set((state) => {
       const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, ...updates } : box))
       const scores = calculateAllScores(newBoxes, state.truckDimensions)
+      const sequence = generateOptimalLoadingSequence(newBoxes)
+      const zones = categorizeTemperatureZones(newBoxes)
 
       return {
         boxes: newBoxes,
         stabilityScore: scores.stability,
         safetyScore: scores.safety,
         optimizationScore: scores.optimization,
+        loadingSequence: sequence,
+        temperatureZones: zones,
       }
     })
   },
@@ -258,80 +283,61 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 
   optimizeLayout: () => {
-    const state = get()
-    if (state.boxes.length === 0) return
+  const state = get()
+  if (state.boxes.length === 0) {
+    console.log('❌ No boxes to optimize')
+    return
+  }
 
-    // Use MCTS for smaller sets, heuristic for larger ones
-    if (state.boxes.length <= 15) {
-      get().optimizeLayoutMCTS()
-    } else {
-      // Implement basic optimization algorithm for large sets
-      const optimizedBoxes = state.boxes.map((box, index) => ({
+  console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
+  const startTime = performance.now()
+
+  try {
+    // Create a deep copy of boxes to avoid mutation issues
+    const boxesToOptimize = state.boxes.map(box => ({ 
+      ...box,
+      position: { ...box.position }
+    }))
+
+    // Use the optimization algorithm
+    const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
+    const endTime = performance.now()
+
+    console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
+
+    // IMMEDIATELY update the state with optimized boxes
+    set({ 
+      boxes: optimizedBoxes.map(box => ({
         ...box,
-        position: {
-          x: (index % 3 - 1) * 2,
-          y: box.height / 2 + Math.floor(index / 9) * 2,
-          z: (Math.floor(index / 3) % 3 - 1) * 2,
-        },
+        position: { ...box.position }, // Ensure position is a new object
+        isNew: false
       }))
+    })
 
-      set({ boxes: optimizedBoxes })
-      get().calculateScores()
-      get().generateLoadingSequence()
-    }
-  },
-
-  optimizeLayoutMCTS: () => {
-    const state = get()
-    if (state.boxes.length === 0) return
-
-    console.log('🧠 Starting MCTS-based layout optimization...')
-    const startTime = performance.now()
-
-    try {
-      // Import and use MCTS optimizer
-      import('../lib/mcts-placement').then(({ MCTSPlacementOptimizer }) => {
-        const optimizer = new MCTSPlacementOptimizer(state.truckDimensions, {
-          truckDimensions: state.truckDimensions,
-          maxWeight: 34000,
-          temperatureZones: {
-            cold: [{ x: -3.5, y: 1, z: -3, width: 3, height: 2, length: 2 }],
-            frozen: [{ x: 3.5, y: 1, z: -3, width: 3, height: 2, length: 2 }],
-            regular: []
-          },
-          fragileZones: [],
-          lifoOrder: true,
-          perishableAreas: []
-        })
-
-        const optimizedBoxes = optimizer.findOptimalPlacement(state.boxes)
-        const endTime = performance.now()
-
-        // Update MCTS stats
-        const mctsStats = {
-          iterations: 200, // This would come from optimizer
-          explorationRate: Math.sqrt(2),
-          bestScore: 0, // Would be calculated
-          searchTime: endTime - startTime,
-          stateTransitions: optimizedBoxes.length
-        }
-
-        set({ 
-          boxes: optimizedBoxes,
-          mctsStats
-        })
-
-        get().calculateScores()
-        get().generateLoadingSequence()
-
-        console.log('✅ MCTS optimization completed in', (endTime - startTime).toFixed(2), 'ms')
+    console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
+    
+    // Recalculate everything after optimization in next tick
+    requestAnimationFrame(() => {
+      const currentState = get()
+      const scores = calculateAllScores(currentState.boxes, currentState.truckDimensions)
+      const sequence = generateOptimalLoadingSequence(currentState.boxes)
+      const zones = categorizeTemperatureZones(currentState.boxes)
+      
+      set({
+        stabilityScore: scores.stability,
+        safetyScore: scores.safety,
+        optimizationScore: scores.optimization,
+        loadingSequence: sequence,
+        temperatureZones: zones,
       })
-    } catch (error) {
-      console.error('❌ MCTS optimization failed:', error)
-      // Fall back to heuristic
-      get().optimizeLayout()
-    }
-  },
+      
+      console.log('📊 Scores updated:', scores)
+    })
+
+  } catch (error) {
+    console.error('❌ Layout optimization failed:', error)
+  }
+},
 
   resetLayout: () => {
     set((state) => {
@@ -340,11 +346,13 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
         position: { x: 0, y: box.height / 2, z: 0 },
       }))
 
+      const scores = calculateAllScores(resetBoxes, state.truckDimensions)
+
       return {
         boxes: resetBoxes,
-        stabilityScore: 0,
-        safetyScore: 0,
-        optimizationScore: 0,
+        stabilityScore: scores.stability,
+        safetyScore: scores.safety,
+        optimizationScore: scores.optimization,
       }
     })
   },
@@ -388,6 +396,8 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
     }))
   },
 }))
+
+// Helper Functions
 
 function calculateAllScores(boxes: Box[], truckDimensions: { width: number; length: number; height: number }) {
   const stability = calculateStabilityScore(boxes, truckDimensions)
@@ -439,7 +449,7 @@ function calculateSafetyScore(
 
   let score = 100
 
-
+  // Weight limit check
   const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
   if (totalWeight > 34000) {
     score -= 25
@@ -536,31 +546,80 @@ function getDistance(pos1: { x: number; y: number; z: number }, pos2: { x: numbe
 }
 
 function optimizeBoxPlacement(boxes: Box[], truckDimensions: { width: number; length: number; height: number }): Box[] {
-  const optimizedBoxes = [...boxes]
+  console.log('📦 Optimizing placement for', boxes.length, 'boxes')
+  
+  if (boxes.length === 0) return []
+  
+  // Create deep copies to avoid mutations
+  const optimizedBoxes = boxes.map(box => ({
+    ...box,
+    position: { ...box.position }
+  }))
 
-  // Sort by priority
+  // Sort by priority: delivery order, fragility, weight
   optimizedBoxes.sort((a, b) => {
     const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 }
-    const aStop = stopOrder[a.destination as keyof typeof stopOrder] || 4
-    const bStop = stopOrder[b.destination as keyof typeof stopOrder] || 4
+    const aStop = stopOrder[a.destination as keyof typeof stopOrder] ?? 4
+    const bStop = stopOrder[b.destination as keyof typeof stopOrder] ?? 4
 
     if (aStop !== bStop) return aStop - bStop
     if (a.isFragile !== b.isFragile) return a.isFragile ? 1 : -1
     return b.weight - a.weight
   })
 
-  // Advanced 3D bin packing with physics constraints
+  console.log('📋 Sorted boxes by priority')
+
+  // Clear all positions first
+  optimizedBoxes.forEach(box => {
+    box.position = { x: 0, y: box.height / 2, z: 0 }
+  })
+
+  // Place boxes one by one
   const placedBoxes: Box[] = []
 
-  optimizedBoxes.forEach((box) => {
+  optimizedBoxes.forEach((box, index) => {
+    console.log(`📍 Placing box ${index + 1}/${optimizedBoxes.length}: ${box.id}`)
+    
     const bestPosition = findBestPosition(box, placedBoxes, truckDimensions)
 
     if (bestPosition) {
-      box.position = bestPosition
-      placedBoxes.push(box)
+      // Create new position object to trigger re-render
+      box.position = {
+        x: Number(bestPosition.x.toFixed(2)),
+        y: Number(bestPosition.y.toFixed(2)),
+        z: Number(bestPosition.z.toFixed(2))
+      }
+      console.log(`✅ Placed ${box.id} at position:`, box.position)
+    } else {
+      // Enhanced fallback: place in a proper grid pattern
+      const gridCols = Math.floor(truckDimensions.width / (box.width + 0.5))
+      const gridRows = Math.floor(truckDimensions.length / (box.length + 0.5))
+      
+      const col = index % gridCols
+      const row = Math.floor(index / gridCols) % gridRows
+      const layer = Math.floor(index / (gridCols * gridRows))
+      
+      const fallbackX = (col - (gridCols - 1) / 2) * (box.width + 0.5)
+      const fallbackZ = (row - (gridRows - 1) / 2) * (box.length + 0.5)
+      const fallbackY = box.height / 2 + layer * (box.height + 0.2)
+      
+      // Ensure within truck bounds
+      box.position = {
+        x: Number(Math.max(-truckDimensions.width/2 + box.width/2, 
+                   Math.min(truckDimensions.width/2 - box.width/2, fallbackX)).toFixed(2)),
+        y: Number(Math.min(truckDimensions.height - box.height/2, fallbackY).toFixed(2)),
+        z: Number(Math.max(-truckDimensions.length/2 + box.length/2, 
+                   Math.min(truckDimensions.length/2 - box.length/2, fallbackZ)).toFixed(2))
+      }
+      console.log(`⚠️ Used fallback position for ${box.id}:`, box.position)
     }
+    
+    placedBoxes.push(box)
   })
 
+  console.log('✅ All boxes placed successfully')
+  console.log('📊 Final positions sample:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
+  
   return optimizedBoxes
 }
 
@@ -569,32 +628,46 @@ function findBestPosition(
   placedBoxes: Box[],
   truckDimensions: { width: number; length: number; height: number },
 ): { x: number; y: number; z: number } | null {
+  
   const candidates: Array<{ position: { x: number; y: number; z: number }; score: number }> = []
-
-  // Generate candidate positions
-  for (let x = -truckDimensions.width / 2 + box.width / 2; x <= truckDimensions.width / 2 - box.width / 2; x += 0.5) {
-    for (
-      let z = -truckDimensions.length / 2 + box.length / 2;
-      z <= truckDimensions.length / 2 - box.length / 2;
-      z += 0.5
-    ) {
-      for (let y = box.height / 2; y <= truckDimensions.height - box.height / 2; y += 0.5) {
+  
+  // Use adaptive step size based on box count for performance
+  const stepSize = placedBoxes.length > 50 ? 1.0 : 0.5
+  let maxCandidates = 100 // Limit candidates for performance
+  
+  // Generate candidate positions more efficiently
+  for (let x = -truckDimensions.width / 2 + box.width / 2; 
+       x <= truckDimensions.width / 2 - box.width / 2 && candidates.length < maxCandidates; 
+       x += stepSize) {
+    for (let z = -truckDimensions.length / 2 + box.length / 2; 
+         z <= truckDimensions.length / 2 - box.length / 2 && candidates.length < maxCandidates; 
+         z += stepSize) {
+      for (let y = box.height / 2; 
+           y <= truckDimensions.height - box.height / 2 && candidates.length < maxCandidates; 
+           y += stepSize) {
         const position = { x, y, z }
 
         if (isValidPosition(box, position, placedBoxes, truckDimensions)) {
           const score = evaluatePosition(box, position, placedBoxes, truckDimensions)
           candidates.push({ position, score })
+          
+          // Early exit for excellent positions
+          if (score > 90) break
         }
       }
     }
   }
 
-  if (candidates.length === 0) return null
+  if (candidates.length === 0) {
+    console.log(`❌ No valid position found for box ${box.id}`)
+    return null
+  }
 
+  // Return the best scoring position
   candidates.sort((a, b) => b.score - a.score)
+  console.log(`✅ Found ${candidates.length} valid positions for ${box.id}, best score: ${candidates[0].score.toFixed(2)}`)
   return candidates[0].position
 }
-
 function isValidPosition(
   box: Box,
   position: { x: number; y: number; z: number },
@@ -632,18 +705,47 @@ function evaluatePosition(
 ): number {
   let score = 100
 
-  // Prefer lower positions (stability)
-  score -= position.y * 5
+  // Prefer lower positions for stability
+  score -= position.y * 3
 
-  // Prefer positions closer to correct temperature zone
+  // Prefer positions closer to truck center for lateral stability
+  score -= Math.abs(position.x) * 2
+
+  // Temperature zone compliance
   const zoneScore = getTemperatureZoneScore(box, position, truckDimensions)
-  score += zoneScore * 20
+  score += zoneScore * 25
 
-  // Prefer positions closer to truck center (lateral stability)
-  const lateralPenalty = Math.abs(position.x) * 2
-  score -= lateralPenalty
+  // Fragile item protection
+  if (box.isFragile) {
+    score -= position.y * 5 // Fragile items prefer lower positions
+    score += (truckDimensions.height - position.y) * 2 // Bonus for being lower
+  }
+
+  // Weight distribution - heavier items prefer bottom
+  const weightFactor = box.weight / 1000 // Normalize weight
+  score += (truckDimensions.height - position.y) * weightFactor
+
+  // Accessibility for loading sequence
+  const accessibilityScore = evaluateAccessibility(box, position, truckDimensions)
+  score += accessibilityScore * 10
 
   return score
+}
+
+function evaluateAccessibility(
+  box: Box,
+  position: { x: number; y: number; z: number },
+  truckDimensions: { width: number; length: number; height: number }
+): number {
+  // Items that need to be unloaded first should be more accessible
+  const stopOrder = { "Stop 1": 4, "Stop 2": 3, "Stop 3": 2, "Stop 4": 1 }
+  const priority = stopOrder[box.destination as keyof typeof stopOrder] ?? 0
+
+  // Distance from truck opening (assuming rear loading)
+  const distanceFromRear = (truckDimensions.length / 2 + position.z) / truckDimensions.length
+
+  // Higher priority items should be closer to the rear
+  return priority * (1 - distanceFromRear)
 }
 
 function getTemperatureZoneScore(
@@ -665,7 +767,7 @@ function getTemperatureZoneScore(
   }
 }
 
-function generateOptimalLoadingSequence(boxes: Box[]): string[] {
+function generateOptimalLoadingSequence(boxes: Box[]): Box[] {
   const sorted = [...boxes].sort((a, b) => {
     const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 }
     const aStop = stopOrder[a.destination as keyof typeof stopOrder] || 4
@@ -676,7 +778,7 @@ function generateOptimalLoadingSequence(boxes: Box[]): string[] {
     return b.weight - a.weight
   })
 
-  return sorted.map((box) => box.id)
+  return sorted
 }
 
 function categorizeTemperatureZones(boxes: Box[]) {

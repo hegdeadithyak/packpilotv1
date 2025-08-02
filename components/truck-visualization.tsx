@@ -3,7 +3,7 @@
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls, Environment, PerspectiveCamera, Html, Stats } from "@react-three/drei"
 import { Physics } from "@react-three/cannon"
-import { Suspense, useRef, useEffect, useState } from "react"
+import { Suspense, useRef, useEffect, useState, useMemo } from "react"
 import { TruckContainer } from "@/components/3d/truck-container"
 import { TemperatureZones } from "@/components/3d/temperature-zones"
 import { LoadingIndicators } from "@/components/3d/loading-indicators"
@@ -17,7 +17,6 @@ import {
   TruckBedPhysics,
   useTruckPhysics 
 } from "@/physics/truck-physics-system"
-
 
 interface TruckVisualizationProps {
   viewMode: "3d" | "2d" | "hybrid"
@@ -34,7 +33,12 @@ function PerformanceStats() {
   const [physicsObjects, setPhysicsObjects] = useState(0)
   const lastTime = useRef(performance.now())
   const frameStart = useRef(0)
-  const { boxes, isSimulationRunning } = useOptimizationStore()
+  const { boxes, isSimulationRunning, optimizeLayout } = useOptimizationStore()
+
+  const handleOptimize = () => {
+    console.log('🔄 Optimize button clicked from PerformanceStats')
+    optimizeLayout()
+  }
 
   useFrame(() => {
     const currentTime = performance.now()
@@ -56,17 +60,33 @@ function PerformanceStats() {
   })
 
   return (
-    <Html position={[12, 8, 0]} className="pointer-events-none">
+    <Html position={[12, 8, 0]} className="pointer-events-auto">
       <div className="bg-black/90 text-white p-3 rounded text-xs font-mono border border-gray-600">
         <div className={`${fps > 60 ? "text-green-400" : fps > 30 ? "text-yellow-400" : "text-red-400"}`}>
           FPS: {fps}
         </div>
+        
         <div className="text-cyan-400">Render: {renderTime.toFixed(2)}ms</div>
         <div className="text-blue-400">Physics Objects: {physicsObjects}</div>
         <div className={`${isSimulationRunning ? "text-green-400" : "text-gray-400"}`}>
           Physics: {isSimulationRunning ? "ACTIVE" : "IDLE"}
         </div>
         <div className="text-gray-400">WebGL 2.0</div>
+        
+        {/* Optimize Button */}
+        <button
+          onClick={handleOptimize}
+          disabled={boxes.length === 0}
+          className={`
+            mt-2 px-3 py-1 rounded text-xs font-medium transition-all duration-200
+            ${boxes.length === 0
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+            }
+          `}
+        >
+          Optimize ({boxes.length})
+        </button>
       </div>
     </Html>
   )
@@ -124,13 +144,43 @@ function PhysicsStatusIndicator() {
   )
 }
 
+// Enhanced Box Renderer Component that properly re-renders
+function BoxRenderer({ box }: { box: any }) {
+  const [position, setPosition] = useState(box.position)
+  
+  useEffect(() => {
+    console.log(`📦 Box ${box.id} position updated:`, box.position)
+    setPosition(box.position)
+  }, [box.position, box.id])
+
+  return (
+    <EnhancedBoxRenderer 
+      key={`${box.id}-${position.x}-${position.y}-${position.z}`} 
+      box={{ ...box, position }} 
+    />
+  )
+}
+
 function Scene() {
   const { boxes, physicsEnabled, truckDimensions, updatePhysics } = useOptimizationStore()
+  
+  // Force re-render when boxes change
+  const boxesKey = useMemo(() => {
+    return boxes.map(b => `${b.id}-${b.position.x}-${b.position.y}-${b.position.z}`).join(',')
+  }, [boxes])
 
   useEffect(() => {
-    // Update physics calculations when boxes change
+    console.log('📊 Scene updated with', boxes.length, 'boxes')
     updatePhysics()
   }, [boxes, updatePhysics])
+
+  // Create memoized box renderers
+  const boxRenderers = useMemo(() => {
+    console.log('🔄 Re-creating box renderers for', boxes.length, 'boxes')
+    return boxes.map((box) => (
+      <BoxRenderer key={`${box.id}-${boxesKey}`} box={box} />
+    ))
+  }, [boxes, boxesKey])
 
   return (
     <>
@@ -168,9 +218,7 @@ function Scene() {
       <PhysicsSimulationController />
 
       {/* Enhanced Box Rendering with Physics */}
-      {boxes.map((box) => (
-        <EnhancedBoxRenderer key={box.id} box={box} />
-      ))}
+      {boxRenderers}
 
       {/* Ground Plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
@@ -193,7 +241,14 @@ function Scene() {
 
 export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { physicsEnabled } = useOptimizationStore()
+  const { physicsEnabled, boxes, optimizeLayout } = useOptimizationStore()
+  const [forceUpdate, setForceUpdate] = useState(0)
+
+  // Force re-render when boxes change
+  useEffect(() => {
+    console.log('🔄 TruckVisualization: Boxes changed, forcing update')
+    setForceUpdate(prev => prev + 1)
+  }, [boxes])
 
   useEffect(() => {
     if (canvasRef.current) {
@@ -207,6 +262,11 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
       }
     }
   }, [])
+
+  const handleOptimize = () => {
+    console.log('🔄 Optimize button clicked from TruckVisualization')
+    optimizeLayout()
+  }
 
   if (viewMode === "2d") {
     return <TwoDRenderer />
@@ -226,7 +286,25 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
         <Stats />
       </div>
 
+      {/* Optimize Button Overlay */}
+      <div className="absolute bottom-4 right-4 z-10">
+        <button
+          onClick={handleOptimize}
+          disabled={boxes.length === 0}
+          className={`
+            px-6 py-3 rounded-lg font-medium transition-all duration-200 shadow-lg
+            ${boxes.length === 0
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 hover:shadow-xl'
+            }
+          `}
+        >
+          🚛 Optimize Layout ({boxes.length} boxes)
+        </button>
+      </div>
+
       <Canvas
+        key={`canvas-${forceUpdate}`}
         ref={canvasRef}
         shadows="soft"
         gl={{
@@ -268,7 +346,7 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
             size={4096}
             axisIndex={0}
           >
-            <Scene />
+            <Scene key={`scene-${forceUpdate}`} />
           </Physics>
         </Suspense>
       </Canvas>

@@ -87,6 +87,10 @@ export default function WalmartTruckOptimizer() {
     );
   }
 
+  const handleoptim = () => {
+  useOptimizationStore.getState().optimizeLayout()
+  }
+
   return (
     <div className="h-screen bg-[#0f0f10] text-white overflow-hidden">
       <header className="border-b border-primary/20 bg-[#0f0f10]/95 backdrop-blur-sm z-50 relative">
@@ -237,6 +241,9 @@ export default function WalmartTruckOptimizer() {
                   <Play className="h-4 w-4 mr-1" />
                   {isSimulationRunning ? "Stop Simulation" : "Run Simulation"}
                 </Button>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button className="bg-primary text-white px-2 py-1 rounded" onClick={handleoptim}>Optimize</button>
               </div>
 
               {/* quick stats */}
