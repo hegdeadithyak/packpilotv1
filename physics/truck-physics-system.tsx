@@ -181,6 +181,10 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
   )
 }
 
+<<<<<<< HEAD
+=======
+// Truck bed physics boundary
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
 export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; length: number; height: number } }) {
   // Floor
   const [floorRef] = usePlane(() => ({
@@ -195,22 +199,35 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     rotation: [0, Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
   const [rightWallRef] = usePlane(() => ({
     position: [dimensions.width / 2, dimensions.height / 2, 0],
     rotation: [0, -Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
   const [frontWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, -dimensions.length / 2],
     rotation: [0, 0, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
   const [backWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, dimensions.length / 2],
     rotation: [0, Math.PI, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
 
+<<<<<<< HEAD
   // **** Ceiling (top wall) ****
   const [ceilingRef] = usePlane(() => ({
     position: [0, dimensions.height, 0],
@@ -218,6 +235,8 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     material: { friction: 0.6, restitution: 0.1 },
   }))
 
+=======
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
   return (
     <>
       <mesh ref={floorRef} visible={false}>
@@ -235,10 +254,13 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
       <mesh ref={backWallRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.height]} />
       </mesh>
+<<<<<<< HEAD
       {/* Ceiling to confine boxes */}
       <mesh ref={ceilingRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.length]} />
       </mesh>
+=======
+>>>>>>> 2b9549aa4fb1ff8f91212ca33ef762dee1339c33
     </>
   )
 }
