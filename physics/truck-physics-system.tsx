@@ -45,7 +45,7 @@ export function useTruckPhysics() {
     if (isSimulationRunning) {
       // Simulate different driving scenarios
       const scenario = Math.floor(Math.random() * 4)
-      
+
       switch (scenario) {
         case 0: // Acceleration
           globalTruckPhysics.isAccelerating = true
@@ -89,9 +89,9 @@ interface PhysicsBoxProps {
 
 export function PhysicsBox({ box, children }: PhysicsBoxProps) {
   const { simulationForces, isSimulationRunning, simulationSpeed } = useOptimizationStore()
-  
+
   const [ref, api] = useBox(() => ({
-    mass: box.weight/5, // Convert to reasonable physics mass
+    mass: box.weight / 5, // Convert to reasonable physics mass
     position: [box.position.x, box.position.y, box.position.z],
     args: [box.width, box.height, box.length],
     material: {
@@ -104,12 +104,11 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
 
   const velocityRef = useRef<THREE.Vector3>(new THREE.Vector3())
   const positionRef = useRef<THREE.Vector3>(new THREE.Vector3())
-  
+
   useEffect(() => {
-    // Subscribe to physics updates
     const unsubscribeVelocity = api.velocity.subscribe((v) => velocityRef.current.set(...v))
     const unsubscribePosition = api.position.subscribe((p) => positionRef.current.set(...p))
-    
+
     return () => {
       unsubscribeVelocity()
       unsubscribePosition()
@@ -118,54 +117,37 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
 
   useFrame((state, delta) => {
     if (!isSimulationRunning) return
-
     const adjustedDelta = delta * simulationSpeed
-    
-    // Apply truck-wide forces to this box
     const truckForce = new THREE.Vector3()
-    
-    // Gravity (always present)
     truckForce.y += PHYSICS_CONSTANTS.GRAVITY * (box.weight / 100)
-    
-    // Truck acceleration forces
     if (globalTruckPhysics.isAccelerating) {
-      // Forward acceleration pushes boxes backward
       truckForce.z += simulationForces.acceleration * (box.weight / 100)
     }
-    
     if (globalTruckPhysics.isBraking) {
-      // Braking pushes boxes forward
       truckForce.z -= simulationForces.braking * (box.weight / 1000)
     }
-    
+
     if (globalTruckPhysics.isTurning) {
-      // Turning creates lateral forces
       const lateralForce = simulationForces.turning * globalTruckPhysics.turnDirection
       truckForce.x += lateralForce * (box.weight / 1000)
-      
-      // Add rotational component for more realistic physics
+
       const centrifugalForce = lateralForce * 0.0005
       truckForce.z += centrifugalForce * Math.sin(state.clock.elapsedTime * 2)
     }
-    
-    // Apply additional forces based on box properties
+
     if (box.isFragile) {
-      // Fragile items are more susceptible to forces
       truckForce.multiplyScalar(1.2)
     }
-    
-    // Height-based instability (higher boxes are more unstable)
+
     const heightFactor = (box.position.y / 10) * 0.1
     truckForce.x += (Math.random() - 0.5) * heightFactor
     truckForce.z += (Math.random() - 0.5) * heightFactor
-    
-    // Apply the combined forces
+
     api.applyForce(
       [truckForce.x, truckForce.y, truckForce.z],
       [positionRef.current.x, positionRef.current.y, positionRef.current.z]
     )
-    
-    // Apply air resistance
+
     const currentVelocity = velocityRef.current
     const resistance = currentVelocity.clone().multiplyScalar(-0.1 * adjustedDelta)
     api.applyForce(
@@ -188,6 +170,7 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     position: [0, 0, 0],
     rotation: [-Math.PI / 2, 0, 0],
     material: { friction: 0.8, restitution: 0.1 },
+    type: 'Static',
   }))
 
   // Walls
@@ -195,24 +178,36 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     position: [-dimensions.width / 2, dimensions.height / 2, 0],
     rotation: [0, Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
+    type: 'Static',
   }))
 
   const [rightWallRef] = usePlane(() => ({
     position: [dimensions.width / 2, dimensions.height / 2, 0],
     rotation: [0, -Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
+    type: 'Static',
   }))
 
   const [frontWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, -dimensions.length / 2],
     rotation: [0, 0, 0],
     material: { friction: 0.6, restitution: 0.3 },
+    type: 'Static',
   }))
 
   const [backWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, dimensions.length / 2],
     rotation: [0, Math.PI, 0],
     material: { friction: 0.6, restitution: 0.3 },
+    type: 'Static',
+  }))
+
+  // ADDED: Ceiling wall to prevent boxes from flying upward
+  const [ceilingRef] = usePlane(() => ({
+    position: [0, dimensions.height, 0],
+    rotation: [Math.PI / 2, 0, 0], // Horizontal plane facing downward
+    material: { friction: 0.6, restitution: 0.1 },
+    type: 'Static',
   }))
 
   return (
@@ -232,31 +227,35 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
       <mesh ref={backWallRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.height]} />
       </mesh>
+      {/* ADDED: Ceiling mesh */}
+      <mesh ref={ceilingRef} visible={false}>
+        <planeGeometry args={[dimensions.width, dimensions.length]} />
+      </mesh>
     </>
   )
 }
 
 // Physics simulation controller
 export function PhysicsSimulationController() {
-  const { 
-    isSimulationRunning, 
-    simulationForces, 
-    runSimulation, 
+  const {
+    isSimulationRunning,
+    simulationForces,
+    runSimulation,
     stopSimulation,
-    simulationSpeed 
+    simulationSpeed
   } = useOptimizationStore()
-  
+
   const truckPhysics = useTruckPhysics()
 
   useFrame((state, delta) => {
     if (isSimulationRunning) {
       // Update global physics state
       const adjustedDelta = delta * simulationSpeed
-      
+
       // Apply damping to truck velocity
       globalTruckPhysics.velocity.multiplyScalar(PHYSICS_CONSTANTS.AIR_RESISTANCE)
       globalTruckPhysics.angularVelocity.multiplyScalar(PHYSICS_CONSTANTS.AIR_RESISTANCE)
-      
+
       // Add some random road vibrations for realism
       const vibrationIntensity = 0.02
       globalTruckPhysics.acceleration.y += (Math.random() - 0.5) * vibrationIntensity
@@ -291,7 +290,7 @@ export function EnhancedBoxRenderer({ box }: { box: any }) {
         roughness={0.3}
         metalness={0.1}
       />
-      
+
       {/* Box label */}
       <mesh position={[0, box.height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[box.width * 0.8, box.length * 0.8]} />

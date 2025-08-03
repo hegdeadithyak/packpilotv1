@@ -43,7 +43,7 @@ export function ReportGenerator() {
             100
           ).toFixed(1),
           weightUtilization: ((boxes.reduce((sum, box) => sum + box.weight, 0) / 34000) * 100).toFixed(1),
-          sequence: loadingSequence,
+          sequence: loadingSequence, // This is now correctly an array of Box objects
         },
         scores: {
           stability: stabilityScore,
@@ -87,19 +87,23 @@ export function ReportGenerator() {
             details: `Total weight: ${boxes.reduce((sum, box) => sum + box.weight, 0)} lbs`,
           },
         ],
-        boxes: boxes.map((box, index) => ({
-          sequenceNumber: loadingSequence.indexOf(box.id) + 1,
-          id: box.id,
-          name: box.name,
-          dimensions: `${box.width}×${box.height}×${box.length} ft`,
-          weight: `${box.weight} lbs`,
-          position: `X:${box.position.x.toFixed(1)}, Y:${box.position.y.toFixed(1)}, Z:${box.position.z.toFixed(1)}`,
-          temperatureZone: box.temperatureZone.toUpperCase(),
-          isFragile: box.isFragile ? "YES" : "NO",
-          destination: box.destination,
-          stackLimit: box.stackLimit || "N/A",
-          crushFactor: box.crushFactor ? (box.crushFactor * 100).toFixed(0) + "%" : "N/A",
-        })),
+        // FIXED: Create proper box data with correct sequence numbers
+        boxes: boxes.map((box) => {
+          const sequenceIndex = loadingSequence.findIndex(seqBox => seqBox.id === box.id)
+          return {
+            sequenceNumber: sequenceIndex >= 0 ? sequenceIndex + 1 : 999,
+            id: box.id,
+            name: box.name,
+            dimensions: `${box.width}×${box.height}×${box.length} ft`,
+            weight: `${box.weight} lbs`,
+            position: `X:${box.position.x.toFixed(1)}, Y:${box.position.y.toFixed(1)}, Z:${box.position.z.toFixed(1)}`,
+            temperatureZone: box.temperatureZone.toUpperCase(),
+            isFragile: box.isFragile ? "YES" : "NO",
+            destination: box.destination,
+            stackLimit: box.stackLimit || "N/A",
+            crushFactor: box.crushFactor ? (box.crushFactor * 100).toFixed(0) + "%" : "N/A",
+          }
+        }).sort((a, b) => a.sequenceNumber - b.sequenceNumber), // Sort by loading sequence
         images,
       }
 
@@ -141,24 +145,23 @@ export function ReportGenerator() {
   }
 
   const handleExportLoadingPlan = () => {
+    // FIXED: Create loading plan with proper sequence handling
     const loadingPlan = {
       workspace: currentWorkspace?.name,
       timestamp: new Date().toISOString(),
-      sequence: loadingSequence.map((boxId, index) => {
-        const box = boxes.find((b) => b.id === boxId)
-        return {
-          order: index + 1,
-          boxId,
-          name: box?.name,
-          destination: box?.destination,
-          weight: box?.weight,
-          dimensions: box ? `${box.width}×${box.height}×${box.length}` : "",
-          isFragile: box?.isFragile,
-          temperatureZone: box?.temperatureZone,
-          instructions: box?.isFragile ? "Handle with care - fragile item" : "Standard loading procedure",
-          estimatedTime: "2-3 minutes",
-        }
-      }),
+      sequence: loadingSequence.map((box, index) => ({
+        order: index + 1,
+        boxId: box.id,
+        name: box.name,
+        destination: box.destination,
+        weight: box.weight,
+        dimensions: `${box.width}×${box.height}×${box.length}`,
+        isFragile: box.isFragile,
+        temperatureZone: box.temperatureZone,
+        position: `X:${box.position.x.toFixed(1)}, Y:${box.position.y.toFixed(1)}, Z:${box.position.z.toFixed(1)}`,
+        instructions: box.isFragile ? "Handle with care - fragile item" : "Standard loading procedure",
+        estimatedTime: "2-3 minutes",
+      })),
       unloadingGuide: ["Stop 4", "Stop 3", "Stop 2", "Stop 1"].map((stop) => ({
         stop,
         boxes: boxes
@@ -177,7 +180,13 @@ export function ReportGenerator() {
         estimatedLoadingTime: `${Math.ceil(boxes.length * 2.5)} minutes`,
         stabilityScore: stabilityScore.toFixed(1),
         safetyScore: safetyScore.toFixed(1),
+        optimizationScore: optimizationScore.toFixed(1),
       },
+      physicsAnalysis: {
+        centerOfGravity: calculateCenterOfGravity(boxes),
+        weightDistribution: calculateWeightDistribution(boxes, truckDimensions),
+        stabilityFactors: calculateStabilityFactors(boxes, truckDimensions),
+      }
     }
 
     const blob = new Blob([JSON.stringify(loadingPlan, null, 2)], { type: "application/json" })
@@ -187,6 +196,50 @@ export function ReportGenerator() {
     link.download = `loading-plan-${Date.now()}.json`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  // Helper functions for enhanced analytics
+  const calculateCenterOfGravity = (boxes: any[]) => {
+    if (boxes.length === 0) return { x: 0, y: 0, z: 0 }
+    
+    const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
+    return {
+      x: (boxes.reduce((sum, box) => sum + box.position.x * box.weight, 0) / totalWeight).toFixed(2),
+      y: (boxes.reduce((sum, box) => sum + box.position.y * box.weight, 0) / totalWeight).toFixed(2),
+      z: (boxes.reduce((sum, box) => sum + box.position.z * box.weight, 0) / totalWeight).toFixed(2),
+    }
+  }
+
+  const calculateWeightDistribution = (boxes: any[], truckDimensions: any) => {
+    const frontWeight = boxes.filter(box => box.position.z < 0).reduce((sum, box) => sum + box.weight, 0)
+    const rearWeight = boxes.filter(box => box.position.z >= 0).reduce((sum, box) => sum + box.weight, 0)
+    const leftWeight = boxes.filter(box => box.position.x < 0).reduce((sum, box) => sum + box.weight, 0)
+    const rightWeight = boxes.filter(box => box.position.x >= 0).reduce((sum, box) => sum + box.weight, 0)
+    
+    return {
+      front: `${frontWeight} lbs`,
+      rear: `${rearWeight} lbs`,
+      left: `${leftWeight} lbs`,
+      right: `${rightWeight} lbs`,
+      frontRearRatio: frontWeight > 0 ? (rearWeight / frontWeight).toFixed(2) : "N/A",
+      leftRightRatio: leftWeight > 0 ? (rightWeight / leftWeight).toFixed(2) : "N/A",
+    }
+  }
+
+  const calculateStabilityFactors = (boxes: any[], truckDimensions: any) => {
+    const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
+    const highBoxes = boxes.filter(box => box.position.y > truckDimensions.height * 0.6).length
+    const fragileBoxes = boxes.filter(box => box.isFragile).length
+    const heavyBoxes = boxes.filter(box => box.weight > 500).length
+    
+    return {
+      totalWeight: `${totalWeight} lbs`,
+      weightCapacityUsed: `${((totalWeight / 34000) * 100).toFixed(1)}%`,
+      highPositionBoxes: highBoxes,
+      fragileItems: fragileBoxes,
+      heavyItems: heavyBoxes,
+      averageHeight: boxes.length > 0 ? (boxes.reduce((sum, box) => sum + box.position.y, 0) / boxes.length).toFixed(2) : "0",
+    }
   }
 
   return (
@@ -235,7 +288,8 @@ export function ReportGenerator() {
             <div>• Temperature zone indicators</div>
             <div>• Safety compliance checklist</div>
             <div>• Weight distribution analysis</div>
-            <div>• Cargo securing recommendations</div>
+            <div>• Physics simulation results</div>
+            <div>• Center of gravity calculations</div>
           </div>
         </CardContent>
       </Card>
@@ -257,6 +311,8 @@ export function ReportGenerator() {
             <div className="text-gray-300">✓ Weight Distribution Maps</div>
             <div className="text-gray-300">✓ Temperature Zone Analysis</div>
             <div className="text-gray-300">✓ Physics Simulation Results</div>
+            <div className="text-gray-300">✓ Center of Gravity Analysis</div>
+            <div className="text-gray-300">✓ Stability Factor Calculations</div>
           </div>
         </CardContent>
       </Card>
@@ -276,12 +332,20 @@ export function ReportGenerator() {
               <span className="text-white">{boxes.length}</span>
             </div>
             <div className="flex justify-between">
+              <span className="text-gray-300">Loading Sequence:</span>
+              <span className="text-white">{loadingSequence.length} items</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-gray-300">Stability Score:</span>
               <span className="text-cyan-400">{stabilityScore.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Safety Score:</span>
               <span className="text-cyan-400">{safetyScore.toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Optimization Score:</span>
+              <span className="text-cyan-400">{optimizationScore.toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-300">Ready for Export:</span>
