@@ -52,6 +52,7 @@ interface OptimizationState {
   resetToEmpty: () => void
   initializePhysics: () => void
   updatePhysics: () => void
+  updateBoxPositionPhysics: (id: string, position: { x: number; y: number; z: number }) => void
   runSimulation: () => void
   stopSimulation: () => void
   resetSimulation: () => void
@@ -163,33 +164,50 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
       },
     })
   },
-
   runSimulation: () => {
     set({ isSimulationRunning: true })
 
-    const updateLoop = () => {
+    setTimeout(() => {
       const state = get()
       if (state.isSimulationRunning) {
         get().updatePhysics()
-        setTimeout(updateLoop, 100 / state.simulationSpeed)
       }
-    }
-
-    updateLoop()
+    }, 100)
   },
 
+  // FIXED: Replace the stopSimulation and resetSimulation functions in your optimization-store.ts
+
   stopSimulation: () => {
+    console.log('🛑 Stopping physics simulation without resetting positions')
     set({ isSimulationRunning: false })
+
+    // FIXED: Don't reset positions when stopping simulation
+    // Just recalculate scores based on current positions
+    const state = get()
+    const scores = calculateAllScores(state.boxes, state.truckDimensions)
+
+    set({
+      stabilityScore: scores.stability,
+      safetyScore: scores.safety,
+      optimizationScore: scores.optimization,
+      physicsStats: {
+        collisions: detectCollisions(state.boxes).length,
+        contacts: calculateContacts(state.boxes),
+        totalForce: calculateTotalForce(state.boxes),
+      },
+    })
   },
 
   resetSimulation: () => {
+    console.log('🔄 Resetting simulation and optimizing positions')
     set({ isSimulationRunning: false })
+
+    // FIXED: Only reset positions when explicitly requested (resetSimulation)
     const state = get()
     const optimizedBoxes = optimizeBoxPlacement(state.boxes, state.truckDimensions)
     set({ boxes: optimizedBoxes })
     get().updatePhysics()
   },
-
   setSimulationSpeed: (speed) => {
     set({ simulationSpeed: speed })
   },
@@ -197,6 +215,7 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   setSimulationForces: (forces) => {
     set({ simulationForces: forces })
   },
+
 
   addBox: (box) => {
     set((state) => {
@@ -252,18 +271,51 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
     })
   },
 
-  updateBoxPosition: (id, position) => {
+  // FIXED: Physics-aware position update that doesn't recalculate scores during simulation
+  updateBoxPositionPhysics: (id, position) => {
     set((state) => {
-      const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, position, isNew: false } : box))
-      const scores = calculateAllScores(newBoxes, state.truckDimensions)
-
-      return {
-        boxes: newBoxes,
-        stabilityScore: scores.stability,
-        safetyScore: scores.safety,
-        optimizationScore: scores.optimization,
+      // Only update position during physics simulation, don't recalculate scores
+      if (state.isSimulationRunning) {
+        const newBoxes = state.boxes.map((box) =>
+          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
+        )
+        return { boxes: newBoxes }
+      } else {
+        // Normal behavior when not in simulation
+        const newBoxes = state.boxes.map((box) =>
+          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
+        )
+        const scores = calculateAllScores(newBoxes, state.truckDimensions)
+        return {
+          boxes: newBoxes,
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+        }
       }
     })
+  },
+
+  // FIXED: Modified updateBoxPosition to use physics-aware version
+  updateBoxPosition: (id: string, position: { x: number; y: number; z: number }) => {
+    const state = get()
+    if (state.isSimulationRunning) {
+      // Use physics-aware update during simulation
+      get().updateBoxPositionPhysics(id, position)
+    } else {
+      // Original behavior when not simulating
+      set((state) => {
+        const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, position, isNew: false } : box))
+        const scores = calculateAllScores(newBoxes, state.truckDimensions)
+
+        return {
+          boxes: newBoxes,
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+        }
+      })
+    }
   },
 
   setTruckDimensions: (dimensions) => {
@@ -283,61 +335,61 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 
   optimizeLayout: () => {
-  const state = get()
-  if (state.boxes.length === 0) {
-    console.log('❌ No boxes to optimize')
-    return
-  }
+    const state = get()
+    if (state.boxes.length === 0) {
+      console.log('❌ No boxes to optimize')
+      return
+    }
 
-  console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
-  const startTime = performance.now()
+    console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
+    const startTime = performance.now()
 
-  try {
-    // Create a deep copy of boxes to avoid mutation issues
-    const boxesToOptimize = state.boxes.map(box => ({ 
-      ...box,
-      position: { ...box.position }
-    }))
-
-    // Use the optimization algorithm
-    const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
-    const endTime = performance.now()
-
-    console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
-
-    // IMMEDIATELY update the state with optimized boxes
-    set({ 
-      boxes: optimizedBoxes.map(box => ({
+    try {
+      // Create a deep copy of boxes to avoid mutation issues
+      const boxesToOptimize = state.boxes.map(box => ({
         ...box,
-        position: { ...box.position }, // Ensure position is a new object
-        isNew: false
+        position: { ...box.position }
       }))
-    })
 
-    console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
-    
-    // Recalculate everything after optimization in next tick
-    requestAnimationFrame(() => {
-      const currentState = get()
-      const scores = calculateAllScores(currentState.boxes, currentState.truckDimensions)
-      const sequence = generateOptimalLoadingSequence(currentState.boxes)
-      const zones = categorizeTemperatureZones(currentState.boxes)
-      
+      // Use the optimization algorithm
+      const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
+      const endTime = performance.now()
+
+      console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
+
+      // IMMEDIATELY update the state with optimized boxes
       set({
-        stabilityScore: scores.stability,
-        safetyScore: scores.safety,
-        optimizationScore: scores.optimization,
-        loadingSequence: sequence,
-        temperatureZones: zones,
+        boxes: optimizedBoxes.map(box => ({
+          ...box,
+          position: { ...box.position }, // Ensure position is a new object
+          isNew: false
+        }))
       })
-      
-      console.log('📊 Scores updated:', scores)
-    })
 
-  } catch (error) {
-    console.error('❌ Layout optimization failed:', error)
-  }
-},
+      console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
+
+      // Recalculate everything after optimization in next tick
+      requestAnimationFrame(() => {
+        const currentState = get()
+        const scores = calculateAllScores(currentState.boxes, currentState.truckDimensions)
+        const sequence = generateOptimalLoadingSequence(currentState.boxes)
+        const zones = categorizeTemperatureZones(currentState.boxes)
+
+        set({
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+          loadingSequence: sequence,
+          temperatureZones: zones,
+        })
+
+        console.log('📊 Scores updated:', scores)
+      })
+
+    } catch (error) {
+      console.error('❌ Layout optimization failed:', error)
+    }
+  },
 
   resetLayout: () => {
     set((state) => {
@@ -547,9 +599,9 @@ function getDistance(pos1: { x: number; y: number; z: number }, pos2: { x: numbe
 
 function optimizeBoxPlacement(boxes: Box[], truckDimensions: { width: number; length: number; height: number }): Box[] {
   console.log('📦 Optimizing placement for', boxes.length, 'boxes')
-  
+
   if (boxes.length === 0) return []
-  
+
   // Create deep copies to avoid mutations
   const optimizedBoxes = boxes.map(box => ({
     ...box,
@@ -579,7 +631,7 @@ function optimizeBoxPlacement(boxes: Box[], truckDimensions: { width: number; le
 
   optimizedBoxes.forEach((box, index) => {
     console.log(`📍 Placing box ${index + 1}/${optimizedBoxes.length}: ${box.id}`)
-    
+
     const bestPosition = findBestPosition(box, placedBoxes, truckDimensions)
 
     if (bestPosition) {
@@ -594,32 +646,32 @@ function optimizeBoxPlacement(boxes: Box[], truckDimensions: { width: number; le
       // Enhanced fallback: place in a proper grid pattern
       const gridCols = Math.floor(truckDimensions.width / (box.width + 0.5))
       const gridRows = Math.floor(truckDimensions.length / (box.length + 0.5))
-      
+
       const col = index % gridCols
       const row = Math.floor(index / gridCols) % gridRows
       const layer = Math.floor(index / (gridCols * gridRows))
-      
+
       const fallbackX = (col - (gridCols - 1) / 2) * (box.width + 0.5)
       const fallbackZ = (row - (gridRows - 1) / 2) * (box.length + 0.5)
       const fallbackY = box.height / 2 + layer * (box.height + 0.2)
-      
+
       // Ensure within truck bounds
       box.position = {
-        x: Number(Math.max(-truckDimensions.width/2 + box.width/2, 
-                   Math.min(truckDimensions.width/2 - box.width/2, fallbackX)).toFixed(2)),
-        y: Number(Math.min(truckDimensions.height - box.height/2, fallbackY).toFixed(2)),
-        z: Number(Math.max(-truckDimensions.length/2 + box.length/2, 
-                   Math.min(truckDimensions.length/2 - box.length/2, fallbackZ)).toFixed(2))
+        x: Number(Math.max(-truckDimensions.width / 2 + box.width / 2,
+          Math.min(truckDimensions.width / 2 - box.width / 2, fallbackX)).toFixed(2)),
+        y: Number(Math.min(truckDimensions.height - box.height / 2, fallbackY).toFixed(2)),
+        z: Number(Math.max(-truckDimensions.length / 2 + box.length / 2,
+          Math.min(truckDimensions.length / 2 - box.length / 2, fallbackZ)).toFixed(2))
       }
       console.log(`⚠️ Used fallback position for ${box.id}:`, box.position)
     }
-    
+
     placedBoxes.push(box)
   })
 
   console.log('✅ All boxes placed successfully')
   console.log('📊 Final positions sample:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
-  
+
   return optimizedBoxes
 }
 
@@ -628,29 +680,29 @@ function findBestPosition(
   placedBoxes: Box[],
   truckDimensions: { width: number; length: number; height: number },
 ): { x: number; y: number; z: number } | null {
-  
+
   const candidates: Array<{ position: { x: number; y: number; z: number }; score: number }> = []
-  
+
   // Use adaptive step size based on box count for performance
   const stepSize = placedBoxes.length > 50 ? 1.0 : 0.5
   let maxCandidates = 100 // Limit candidates for performance
-  
+
   // Generate candidate positions more efficiently
-  for (let x = -truckDimensions.width / 2 + box.width / 2; 
-       x <= truckDimensions.width / 2 - box.width / 2 && candidates.length < maxCandidates; 
-       x += stepSize) {
-    for (let z = -truckDimensions.length / 2 + box.length / 2; 
-         z <= truckDimensions.length / 2 - box.length / 2 && candidates.length < maxCandidates; 
-         z += stepSize) {
-      for (let y = box.height / 2; 
-           y <= truckDimensions.height - box.height / 2 && candidates.length < maxCandidates; 
-           y += stepSize) {
+  for (let x = -truckDimensions.width / 2 + box.width / 2;
+    x <= truckDimensions.width / 2 - box.width / 2 && candidates.length < maxCandidates;
+    x += stepSize) {
+    for (let z = -truckDimensions.length / 2 + box.length / 2;
+      z <= truckDimensions.length / 2 - box.length / 2 && candidates.length < maxCandidates;
+      z += stepSize) {
+      for (let y = box.height / 2;
+        y <= truckDimensions.height - box.height / 2 && candidates.length < maxCandidates;
+        y += stepSize) {
         const position = { x, y, z }
 
         if (isValidPosition(box, position, placedBoxes, truckDimensions)) {
           const score = evaluatePosition(box, position, placedBoxes, truckDimensions)
           candidates.push({ position, score })
-          
+
           // Early exit for excellent positions
           if (score > 90) break
         }
@@ -668,6 +720,7 @@ function findBestPosition(
   console.log(`✅ Found ${candidates.length} valid positions for ${box.id}, best score: ${candidates[0].score.toFixed(2)}`)
   return candidates[0].position
 }
+
 function isValidPosition(
   box: Box,
   position: { x: number; y: number; z: number },
