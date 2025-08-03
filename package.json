@@ -53,6 +53,7 @@
     "expo-asset": "latest",
     "expo-file-system": "latest",
     "expo-gl": "latest",
+    "framer-motion": "^12.23.12",
     "html2canvas": "latest",
     "immer": "latest",
     "input-otp": "1.4.1",
