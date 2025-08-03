@@ -181,6 +181,7 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
   )
 }
 
+// Truck bed physics boundary
 export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; length: number; height: number } }) {
   // Floor
   const [floorRef] = usePlane(() => ({
@@ -195,27 +196,23 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     rotation: [0, Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+
   const [rightWallRef] = usePlane(() => ({
     position: [dimensions.width / 2, dimensions.height / 2, 0],
     rotation: [0, -Math.PI / 2, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+
   const [frontWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, -dimensions.length / 2],
     rotation: [0, 0, 0],
     material: { friction: 0.6, restitution: 0.3 },
   }))
+
   const [backWallRef] = usePlane(() => ({
     position: [0, dimensions.height / 2, dimensions.length / 2],
     rotation: [0, Math.PI, 0],
     material: { friction: 0.6, restitution: 0.3 },
-  }))
-
-  // **** Ceiling (top wall) ****
-  const [ceilingRef] = usePlane(() => ({
-    position: [0, dimensions.height, 0],
-    rotation: [Math.PI / 2, 0, 0],    // horizontal, facing down
-    material: { friction: 0.6, restitution: 0.1 },
   }))
 
   return (
@@ -234,10 +231,6 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
       </mesh>
       <mesh ref={backWallRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.height]} />
-      </mesh>
-      {/* Ceiling to confine boxes */}
-      <mesh ref={ceilingRef} visible={false}>
-        <planeGeometry args={[dimensions.width, dimensions.length]} />
       </mesh>
     </>
   )

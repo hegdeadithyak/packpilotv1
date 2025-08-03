@@ -52,6 +52,7 @@ interface OptimizationState {
   resetToEmpty: () => void
   initializePhysics: () => void
   updatePhysics: () => void
+  updateBoxPositionPhysics: (id: string, position: { x: number; y: number; z: number }) => void
   runSimulation: () => void
   stopSimulation: () => void
   resetSimulation: () => void
@@ -163,19 +164,15 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
       },
     })
   },
-
   runSimulation: () => {
     set({ isSimulationRunning: true })
 
-    const updateLoop = () => {
+    setTimeout(() => {
       const state = get()
       if (state.isSimulationRunning) {
         get().updatePhysics()
-        setTimeout(updateLoop, 100 / state.simulationSpeed)
       }
-    }
-
-    updateLoop()
+    }, 100)
   },
 
   stopSimulation: () => {
@@ -197,6 +194,7 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   setSimulationForces: (forces) => {
     set({ simulationForces: forces })
   },
+
 
   addBox: (box) => {
     set((state) => {
@@ -252,18 +250,51 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
     })
   },
 
-  updateBoxPosition: (id, position) => {
+  // FIXED: Physics-aware position update that doesn't recalculate scores during simulation
+  updateBoxPositionPhysics: (id, position) => {
     set((state) => {
-      const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, position, isNew: false } : box))
-      const scores = calculateAllScores(newBoxes, state.truckDimensions)
-
-      return {
-        boxes: newBoxes,
-        stabilityScore: scores.stability,
-        safetyScore: scores.safety,
-        optimizationScore: scores.optimization,
+      // Only update position during physics simulation, don't recalculate scores
+      if (state.isSimulationRunning) {
+        const newBoxes = state.boxes.map((box) => 
+          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
+        )
+        return { boxes: newBoxes }
+      } else {
+        // Normal behavior when not in simulation
+        const newBoxes = state.boxes.map((box) => 
+          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
+        )
+        const scores = calculateAllScores(newBoxes, state.truckDimensions)
+        return {
+          boxes: newBoxes,
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+        }
       }
     })
+  },
+
+  // FIXED: Modified updateBoxPosition to use physics-aware version
+  updateBoxPosition: (id: string, position: { x: number; y: number; z: number }) => {
+    const state = get()
+    if (state.isSimulationRunning) {
+      // Use physics-aware update during simulation
+      get().updateBoxPositionPhysics(id, position)
+    } else {
+      // Original behavior when not simulating
+      set((state) => {
+        const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, position, isNew: false } : box))
+        const scores = calculateAllScores(newBoxes, state.truckDimensions)
+
+        return {
+          boxes: newBoxes,
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+        }
+      })
+    }
   },
 
   setTruckDimensions: (dimensions) => {
@@ -283,61 +314,61 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 
   optimizeLayout: () => {
-  const state = get()
-  if (state.boxes.length === 0) {
-    console.log('❌ No boxes to optimize')
-    return
-  }
+    const state = get()
+    if (state.boxes.length === 0) {
+      console.log('❌ No boxes to optimize')
+      return
+    }
 
-  console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
-  const startTime = performance.now()
+    console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
+    const startTime = performance.now()
 
-  try {
-    // Create a deep copy of boxes to avoid mutation issues
-    const boxesToOptimize = state.boxes.map(box => ({ 
-      ...box,
-      position: { ...box.position }
-    }))
-
-    // Use the optimization algorithm
-    const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
-    const endTime = performance.now()
-
-    console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
-
-    // IMMEDIATELY update the state with optimized boxes
-    set({ 
-      boxes: optimizedBoxes.map(box => ({
+    try {
+      // Create a deep copy of boxes to avoid mutation issues
+      const boxesToOptimize = state.boxes.map(box => ({ 
         ...box,
-        position: { ...box.position }, // Ensure position is a new object
-        isNew: false
+        position: { ...box.position }
       }))
-    })
 
-    console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
-    
-    // Recalculate everything after optimization in next tick
-    requestAnimationFrame(() => {
-      const currentState = get()
-      const scores = calculateAllScores(currentState.boxes, currentState.truckDimensions)
-      const sequence = generateOptimalLoadingSequence(currentState.boxes)
-      const zones = categorizeTemperatureZones(currentState.boxes)
-      
-      set({
-        stabilityScore: scores.stability,
-        safetyScore: scores.safety,
-        optimizationScore: scores.optimization,
-        loadingSequence: sequence,
-        temperatureZones: zones,
+      // Use the optimization algorithm
+      const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
+      const endTime = performance.now()
+
+      console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
+
+      // IMMEDIATELY update the state with optimized boxes
+      set({ 
+        boxes: optimizedBoxes.map(box => ({
+          ...box,
+          position: { ...box.position }, // Ensure position is a new object
+          isNew: false
+        }))
       })
-      
-      console.log('📊 Scores updated:', scores)
-    })
 
-  } catch (error) {
-    console.error('❌ Layout optimization failed:', error)
-  }
-},
+      console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
+      
+      // Recalculate everything after optimization in next tick
+      requestAnimationFrame(() => {
+        const currentState = get()
+        const scores = calculateAllScores(currentState.boxes, currentState.truckDimensions)
+        const sequence = generateOptimalLoadingSequence(currentState.boxes)
+        const zones = categorizeTemperatureZones(currentState.boxes)
+        
+        set({
+          stabilityScore: scores.stability,
+          safetyScore: scores.safety,
+          optimizationScore: scores.optimization,
+          loadingSequence: sequence,
+          temperatureZones: zones,
+        })
+        
+        console.log('📊 Scores updated:', scores)
+      })
+
+    } catch (error) {
+      console.error('❌ Layout optimization failed:', error)
+    }
+  },
 
   resetLayout: () => {
     set((state) => {
@@ -668,6 +699,7 @@ function findBestPosition(
   console.log(`✅ Found ${candidates.length} valid positions for ${box.id}, best score: ${candidates[0].score.toFixed(2)}`)
   return candidates[0].position
 }
+
 function isValidPosition(
   box: Box,
   position: { x: number; y: number; z: number },
