@@ -13,9 +13,37 @@ import {
 } from "@/components/ui/select";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, QrCode, Trash2, Package, X } from "lucide-react";
+import { Plus, QrCode, Trash2, Package, X, AlertTriangle } from "lucide-react";
 import { useOptimizationStore } from "@/store/optimization-store";
 import type { Box } from "@/types/box";
+
+// Import the route store from the TruckVisualization system
+import { create } from 'zustand'
+
+// Route Store Interface (matching the TruckVisualization system)
+interface DeliveryStop {
+  id: string
+  warehouseId: number
+  warehouse: {
+    id: number
+    name: string
+    address: string
+    coordinates: { lat: number; lng: number }
+    capacity: number
+  }
+  order: number
+  estimatedArrival?: string
+  isCompleted: boolean
+  name: string
+}
+
+interface RouteStore {
+  deliveryStops: DeliveryStop[]
+  getAvailableDestinations: () => string[]
+}
+
+// Use the same route store - import from TruckVisualization
+import { useRouteStore } from "./truck-visualization";
 
 /* -------------------------------------------------------------------------- */
 /*                               QR Utilities                                 */
@@ -25,7 +53,7 @@ import type { Box } from "@/types/box";
  * Validate JSON text coming from a QR code and coerce it to a `Box` payload
  * (without runtime-generated properties such as `id`, `position`, `isNew`).
  */
-function parseBoxQR(qr: string): Omit<Box, "id" | "position" | "isNew"> {
+function parseBoxQR(qr: string, availableDestinations: string[]): Omit<Box, "id" | "position" | "isNew"> {
   let raw: any;
   try {
     raw = JSON.parse(qr);
@@ -40,7 +68,6 @@ function parseBoxQR(qr: string): Omit<Box, "id" | "position" | "isNew"> {
     "length",
     "weight",
     "temperatureZone",
-    "destination",
   ];
 
   const missing = required.filter(
@@ -54,12 +81,15 @@ function parseBoxQR(qr: string): Omit<Box, "id" | "position" | "isNew"> {
     }
   }
 
-  if (![`regular`, `cold`, `frozen`].includes(raw.temperatureZone)) {
+  if (!["regular", "cold", "frozen"].includes(raw.temperatureZone)) {
     throw new Error("temperatureZone must be regular, cold or frozen");
   }
-  if (![`Stop 1`, `Stop 2`, `Stop 3`, `Stop 4`].includes(raw.destination)) {
-    throw new Error("destination must be one of the predefined stops");
+
+  // Dynamic destination validation based on available stops
+  if (raw.destination && availableDestinations.length > 0 && !availableDestinations.includes(raw.destination)) {
+    console.warn(`Destination "${raw.destination}" not found in route stops, will be cleared`);
   }
+
   alert("QR Scan Successful");
   return {
     name: String(raw.name).trim(),
@@ -69,7 +99,7 @@ function parseBoxQR(qr: string): Omit<Box, "id" | "position" | "isNew"> {
     weight: raw.weight,
     temperatureZone: raw.temperatureZone,
     isFragile: Boolean(raw.isFragile),
-    destination: raw.destination,
+    destination: (raw.destination && availableDestinations.includes(raw.destination)) ? raw.destination : "",
   };
 }
 
@@ -92,13 +122,20 @@ function detectQR(frame: ImageData): string | null {
 
 export function BoxManager() {
   /* ----------------------------- global store ----------------------------- */
-  const { boxes, addBox, removeBox } = useOptimizationStore();
+  const { boxes, addBox, removeBox, updateBox } = useOptimizationStore();
+  const { deliveryStops, getAvailableDestinations } = useRouteStore();
+
+  /* ------------------------------ derived state --------------------------- */
+  const availableDestinations = getAvailableDestinations();
+  const hasRouteStops = availableDestinations.length > 0;
 
   /* ------------------------------ local state ----------------------------- */
   const [showScanner, setShowScanner] = useState(false);
   const [qrText, setQrText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
+  const [selectedBoxes, setSelectedBoxes] = useState<Set<string>>(new Set());
+  const [bulkDestination, setBulkDestination] = useState<string>("");
 
   const [draft, setDraft] = useState<Partial<Box>>({
     name: "",
@@ -108,7 +145,7 @@ export function BoxManager() {
     weight: 10,
     temperatureZone: "regular",
     isFragile: false,
-    destination: "Stop 1",
+    destination: "",
   });
 
   /* ------------------------------- refs ----------------------------------- */
@@ -116,6 +153,21 @@ export function BoxManager() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  /* ------------------------- route sync effects --------------------------- */
+  useEffect(() => {
+    // Clear draft destination if it becomes invalid
+    if (draft.destination && !availableDestinations.includes(draft.destination)) {
+      setDraft(prev => ({ ...prev, destination: "" }));
+    }
+  }, [availableDestinations, draft.destination]);
+
+  useEffect(() => {
+    // Clear bulk destination if it becomes invalid
+    if (bulkDestination && !availableDestinations.includes(bulkDestination)) {
+      setBulkDestination("");
+    }
+  }, [availableDestinations, bulkDestination]);
 
   /* ------------------------- camera lifecycle ----------------------------- */
   const stopCamera = () => {
@@ -180,7 +232,7 @@ export function BoxManager() {
       weight: 10,
       temperatureZone: "regular",
       isFragile: false,
-      destination: "Stop 1",
+      destination: "",
     });
 
   const addBoxToStore = (payload: Omit<Box, "id" | "position" | "isNew">) => {
@@ -197,7 +249,7 @@ export function BoxManager() {
     setBusy(true);
     setError("");
     try {
-      addBoxToStore(parseBoxQR(txt));
+      addBoxToStore(parseBoxQR(txt, availableDestinations));
       setShowScanner(false);
       setQrText("");
     } catch (e: any) {
@@ -222,16 +274,136 @@ export function BoxManager() {
       weight: draft.weight ?? 10,
       temperatureZone: draft.temperatureZone ?? "regular",
       isFragile: draft.isFragile ?? false,
-      destination: draft.destination ?? "Stop 1",
+      destination: draft.destination ?? "",
     });
     resetDraft();
   };
+
+  // Bulk operations
+  const toggleBoxSelection = (boxId: string) => {
+    const newSelection = new Set(selectedBoxes);
+    if (newSelection.has(boxId)) {
+      newSelection.delete(boxId);
+    } else {
+      newSelection.add(boxId);
+    }
+    setSelectedBoxes(newSelection);
+  };
+
+  const handleBulkDestinationUpdate = () => {
+    if (!bulkDestination || selectedBoxes.size === 0) return;
+    
+    selectedBoxes.forEach(boxId => {
+      updateBox(boxId, { destination: bulkDestination });
+    });
+    
+    setSelectedBoxes(new Set());
+    setBulkDestination("");
+  };
+
+  const selectAllBoxes = () => {
+    setSelectedBoxes(new Set(boxes.map(box => box.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedBoxes(new Set());
+  };
+
+  // Utility functions
+  const getDestinationColor = (destination: string) => {
+    const stopIndex = availableDestinations.indexOf(destination);
+    const colors = ['text-red-400', 'text-orange-400', 'text-green-400', 'text-blue-400', 'text-yellow-400', 'text-purple-400'];
+    return colors[stopIndex % colors.length] || 'text-gray-400';
+  };
+
+  const unassignedBoxes = boxes.filter(box => !box.destination);
 
   /* ---------------------------------------------------------------------- */
   /*                                  UI                                   */
   /* ---------------------------------------------------------------------- */
   return (
     <div className="space-y-4">
+      {/* ────────────────────── Route Status Warning ────────────────────── */}
+      {!hasRouteStops && (
+        <Card className="bg-orange-500/10 border-orange-500/20">
+          <CardContent className="pt-4">
+            <div className="flex items-start space-x-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <div className="font-medium text-orange-700 dark:text-orange-400">
+                  No Route Stops Available
+                </div>
+                <div className="text-orange-600 dark:text-orange-300 text-xs mt-1">
+                  Add delivery stops in the Route Planning tab to assign destinations to boxes.
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ────────────────────── Bulk Operations ────────────────────── */}
+      {selectedBoxes.size > 0 && hasRouteStops && (
+        <Card className="bg-blue-500/10 border-blue-500/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-blue-600 dark:text-blue-400">
+              Bulk Operations ({selectedBoxes.size} boxes selected)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">
+                Assign Destination:
+              </Label>
+              <div className="flex gap-2 mt-1">
+                <Select
+                  value={bulkDestination}
+                  onValueChange={setBulkDestination}
+                >
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue placeholder="Select destination..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableDestinations.map((dest) => (
+                      <SelectItem key={dest} value={dest}>
+                        {dest}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={handleBulkDestinationUpdate}
+                  disabled={!bulkDestination}
+                  className="h-8 text-xs"
+                  size="sm"
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={selectAllBoxes}
+                variant="outline"
+                className="h-7 text-xs flex-1"
+                size="sm"
+              >
+                Select All
+              </Button>
+              <Button
+                onClick={clearSelection}
+                variant="outline"
+                className="h-7 text-xs flex-1"
+                size="sm"
+              >
+                Clear
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ────────────────────── New Box Card ────────────────────── */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
@@ -326,16 +498,19 @@ export function BoxManager() {
                   Destination
                 </Label>
                 <Select
-                  value={draft.destination}
+                  value={draft.destination || ""}
                   onValueChange={(v) => setDraft({ ...draft, destination: v })}
+                  disabled={!hasRouteStops}
                 >
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
+                    <SelectValue placeholder={
+                      hasRouteStops ? "Select destination..." : "No stops available"
+                    } />
                   </SelectTrigger>
                   <SelectContent>
-                    {["Stop 1", "Stop 2", "Stop 3", "Stop 4"].map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
+                    {availableDestinations.map((dest) => (
+                      <SelectItem key={dest} value={dest}>
+                        {dest}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -423,7 +598,7 @@ export function BoxManager() {
                   className="w-full h-20 px-2 py-1 text-xs border rounded-md resize-none mt-1"
                   value={qrText}
                   onChange={(e) => setQrText(e.target.value)}
-                  placeholder='{"name":"Box1","width":10,"height":5,"length":8,"weight":15,"temperatureZone":"regular","destination":"Stop 1"}'
+                  placeholder={`{"name":"Box1","width":10,"height":5,"length":8,"weight":15,"temperatureZone":"regular","destination":"${availableDestinations[0] || 'Stop 1'}"}`}
                 />
               </div>
 
@@ -442,8 +617,15 @@ export function BoxManager() {
       {/* ─────────────────────── Current Boxes ─────────────────────── */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center text-primary">
-            <Package className="h-4 w-4 mr-2" /> Current Boxes ({boxes.length})
+          <CardTitle className="text-sm flex items-center justify-between text-primary">
+            <div className="flex items-center">
+              <Package className="h-4 w-4 mr-2" /> Current Boxes ({boxes.length})
+            </div>
+            {unassignedBoxes.length > 0 && (
+              <span className="text-xs bg-orange-500/20 text-orange-600 px-2 py-1 rounded">
+                {unassignedBoxes.length} unassigned
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -456,41 +638,59 @@ export function BoxManager() {
             {boxes.map((b) => (
               <div
                 key={b.id}
-                className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs"
+                className={`flex items-center justify-between p-2 rounded text-xs border transition-colors ${
+                  selectedBoxes.has(b.id) 
+                    ? 'bg-blue-500/20 border-blue-500/30' 
+                    : 'bg-muted/50 border-transparent hover:bg-muted/70'
+                }`}
               >
-                <div className="flex-1">
-                  <div className="font-medium text-foreground truncate max-w-[60%]">
-                    {b.name}
-                  </div>
-                  <div className="text-muted-foreground">
-                    {b.width}×{b.height}×{b.length} | {b.weight}lbs
-                  </div>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <span
-                      className={`px-1 py-0.5 rounded text-xs font-medium ${
-                        b.temperatureZone === "frozen"
-                          ? "bg-primary/20 text-primary"
-                          : b.temperatureZone === "cold"
-                          ? "bg-cyan-500/20 text-cyan-400"
-                          : "bg-secondary/20 text-secondary"
-                      }`}
-                    >
-                      {b.temperatureZone}
-                    </span>
-                    {b.isFragile && (
-                      <span className="px-1 py-0.5 bg-destructive/20 text-destructive rounded text-xs font-medium">
-                        FRAGILE
+                <div className="flex items-center space-x-2 flex-1">
+                  {hasRouteStops && (
+                    <Checkbox
+                      checked={selectedBoxes.has(b.id)}
+                      onCheckedChange={() => toggleBoxSelection(b.id)}
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-foreground truncate">
+                      {b.name}
+                    </div>
+                    <div className="text-muted-foreground">
+                      {b.width}×{b.height}×{b.length} | {b.weight}lbs
+                    </div>
+                    <div className="flex items-center space-x-2 mt-1 flex-wrap">
+                      <span
+                        className={`px-1 py-0.5 rounded text-xs font-medium ${
+                          b.temperatureZone === "frozen"
+                            ? "bg-primary/20 text-primary"
+                            : b.temperatureZone === "cold"
+                            ? "bg-cyan-500/20 text-cyan-400"
+                            : "bg-secondary/20 text-secondary"
+                        }`}
+                      >
+                        {b.temperatureZone}
                       </span>
-                    )}
-                    <span className="text-muted-foreground">
-                      → {b.destination}
-                    </span>
+                      {b.isFragile && (
+                        <span className="px-1 py-0.5 bg-destructive/20 text-destructive rounded text-xs font-medium">
+                          FRAGILE
+                        </span>
+                      )}
+                      {b.destination ? (
+                        <span className={`text-xs font-medium ${getDestinationColor(b.destination)}`}>
+                          📍 {b.destination}
+                        </span>
+                      ) : (
+                        <span className="text-orange-500 text-xs font-medium">
+                          ⚠️ UNASSIGNED
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <Button
                   variant="destructive"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 flex-shrink-0"
                   onClick={() => removeBox(b.id)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -498,6 +698,30 @@ export function BoxManager() {
               </div>
             ))}
           </div>
+
+          {/* Destination Summary */}
+          {hasRouteStops && boxes.length > 0 && (
+            <div className="mt-4 pt-3 border-t">
+              <h4 className="text-xs font-medium text-muted-foreground mb-2">Destination Summary</h4>
+              <div className="space-y-1">
+                {availableDestinations.map((dest) => {
+                  const count = boxes.filter(box => box.destination === dest).length
+                  return (
+                    <div key={dest} className="flex justify-between text-xs">
+                      <span className={getDestinationColor(dest)}>{dest}:</span>
+                      <span className="text-foreground font-medium">{count} boxes</span>
+                    </div>
+                  )
+                })}
+                <div className="flex justify-between text-xs pt-1 border-t">
+                  <span className="text-muted-foreground">Unassigned:</span>
+                  <span className="text-orange-500 font-medium">
+                    {unassignedBoxes.length} boxes
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

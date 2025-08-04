@@ -1,288 +1,378 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { WorkspaceSelector } from "@/components/workspace-selector";
-import { TruckVisualization } from "@/components/truck-visualization";
-import MapVisualization from "@/components/map-visualization";
-import { ControlPanel } from "@/components/control-panel";
-import { BoxManager } from "@/components/box-manager";
-import { PhysicsPanel } from "@/components/physics-panel";
-import { ReportGenerator } from "@/components/report-generator";
-import { PerformanceMonitor } from "@/components/performance-monitor";
-import { StatusPanel } from "@/components/status-panel";
-import { ScoreDisplay } from "@/components/score-display";
-import { SimulationControls } from "@/components/simulation-controls";
-import { useOptimizationStore } from "@/store/optimization-store";
-import { useWorkspaceStore } from "@/store/workspace-store";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Truck,
-  Package,
-  FileText,
-  Settings,
-  Zap,
-  Play,
-  Save,
-  Map,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import type React from "react"
 
-export default function WalmartTruckOptimizer() {
-  // ───────────────────────── state ─────────────────────────
-  const [activeView, setActiveView] = useState<"3d" | "2d" | "hybrid" | "map">(
-    "3d",
-  );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(true);
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Store, Warehouse, Shield } from "lucide-react"
+import { EnhancedWorldMap } from "@/components/enhanced-worldmap"
+import { CursorEffect } from "@/components/cursor-effect"
 
-  // ───────────────────────── stores ─────────────────────────
-  const {
-    boxes,
-    truckDimensions,
-    stabilityScore,
-    safetyScore,
-    optimizationScore,
-    isSimulationRunning,
-    initializePhysics,
-    runSimulation,
-    stopSimulation,
-  } = useOptimizationStore();
+export default function LoginPage() {
+  const router = useRouter()
+  const [showContent, setShowContent] = useState(false)
+  const [retailLoginData, setRetailLoginData] = useState({ retailId: "", password: "" })
+  const [warehouseLoginData, setWarehouseLoginData] = useState({ username: "", password: "" })
+  const [signupData, setSignupData] = useState({
+    shopName: "",
+    retailId: "",
+    password: "",
+    confirmPassword: "",
+    address: "",
+    phone: "",
+  })
 
-  const { currentWorkspace, saveWorkspace } = useWorkspaceStore();
-
-  // ───────────────────────── life-cycle ─────────────────────────
   useEffect(() => {
-    initializePhysics();
-  }, [initializePhysics]);
+    const timer = setTimeout(() => setShowContent(true), 500)
+    return () => clearTimeout(timer)
+  }, [])
 
-  // ───────────────────────── derived metrics ─────────────────────────
-  const totalWeight = boxes.reduce((s, b) => s + b.weight, 0);
-  const totalVolume = boxes.reduce(
-    (s, b) => s + b.width * b.height * b.length,
-    0,
-  );
-  const truckVolume =
-    truckDimensions.width * truckDimensions.length * truckDimensions.height;
-  const volumeUtilization = (totalVolume / truckVolume) * 100;
-  const weightUtilization = (totalWeight / 34_000) * 100;
-
-  // ───────────────────────── actions ─────────────────────────
-  const handleSaveWorkspace = () => {
-    if (!currentWorkspace) return;
-    saveWorkspace(currentWorkspace.id, {
-      ...currentWorkspace,
-      boxes,
-      truckDimensions,
-      lastModified: new Date().toISOString(),
-    });
-  };
-
-  if (showWorkspaceSelector) {
-    return (
-      <WorkspaceSelector
-        onWorkspaceSelected={() => setShowWorkspaceSelector(false)}
-      />
-    );
+  const handleRetailLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (retailLoginData.retailId && retailLoginData.password) {
+      localStorage.setItem(
+        "currentRetail",
+        JSON.stringify({
+          id: retailLoginData.retailId,
+          name: `Retail Shop ${retailLoginData.retailId}`,
+        }),
+      )
+      router.push("/retailer")
+    }
   }
 
-  const handleoptim = () => {
-  useOptimizationStore.getState().optimizeLayout()
+  const handleWarehouseLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (warehouseLoginData.username === "warehouse_admin" && warehouseLoginData.password === "walmart2024") {
+      localStorage.setItem(
+        "warehouseAuth",
+        JSON.stringify({
+          id: "WH001",
+          name: "Walmart Central Warehouse",
+          role: "admin",
+        }),
+      )
+      router.push("/truck")
+    } else {
+      alert("Invalid warehouse credentials!")
+    }
+  }
+
+  const handleSignup = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (signupData.password === signupData.confirmPassword && signupData.shopName) {
+      localStorage.setItem(
+        "currentRetail",
+        JSON.stringify({
+          id: signupData.retailId,
+          name: signupData.shopName,
+        }),
+      )
+      router.push("/dashboard")
+    }
   }
 
   return (
-    <div className="h-screen bg-[#0f0f10] text-white overflow-hidden">
-      <header className="border-b border-primary/20 bg-[#0f0f10]/95 backdrop-blur-sm z-50 relative">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="p-3 bg-gray-800 rounded-xl border border-primary/30">
-                <Truck className="h-7 w-7 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">PackPilot</h1>
-                <p className="text-sm text-primary">
-                  {currentWorkspace?.name ||
-                    "Advanced Physics-Based Warehouse Management System"}
-                </p>
-              </div>
-            </div>
+    <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
+      <CursorEffect />
 
-            <div className="flex items-center space-x-6">
-              <PerformanceMonitor />
-              <ScoreDisplay
-                stabilityScore={stabilityScore}
-                safetyScore={safetyScore}
-                optimizationScore={optimizationScore}
-              />
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSaveWorkspace}
-                >
-                  <Save className="h-4 w-4 mr-1" />
-                  Save
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowWorkspaceSelector(true)}
-                >
-                  Switch Workspace
-                </Button>
-              </div>
-            </div>
+      {/* Full screen world map background */}
+      <div className="absolute inset-0">
+        <EnhancedWorldMap />
+      </div>
+
+      {/* Centered transparent login container */}
+      <div className="relative z-10 w-full max-w-md mx-auto p-8">
+        {/* Static Title */}
+        <div className="text-center space-y-4 mb-8">
+          <div className="flex items-center justify-center gap-3 mb-6 animate-fade-in-up">
+            <Warehouse className="h-10 w-10 text-blue-500 animate-pulse" />
+            <div className="text-4xl font-bold text-white">Walmart Connect</div>
+          </div>
+          <div className="animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
+            <div className="text-gray-400 text-lg">Global Retail-Warehouse Network</div>
           </div>
         </div>
-      </header>
 
-      {/* ───────── Main Layout ───────── */}
-      <div className="flex h-[calc(100vh-88px)]">
-        {/* sidebar */}
+        {/* Animated Form */}
         <div
-          className={`${
-            sidebarCollapsed ? "w-16" : "w-80"
-          } transition-all duration-300 bg-[#0f0f10]/50 backdrop-blur-sm flex flex-col border-r border-primary/20`}
+          className={`transition-all duration-1000 ${showContent ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
         >
-          {/* collapse btn */}
-          <div className="p-4 border-b border-primary/30">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="w-full justify-start text-primary hover:bg-primary/10"
-            >
-              {sidebarCollapsed ? (
-                <ChevronRight className="h-4 w-4" />
-              ) : (
-                <ChevronLeft className="h-4 w-4" />
-              )}
-              {!sidebarCollapsed && (
-                <span className="ml-2">Collapse Panel</span>
-              )}
-            </Button>
-          </div>
+          <Tabs defaultValue="retail-login" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 bg-gray-900/30 backdrop-blur-md border border-gray-700/50 mb-6">
+              <TabsTrigger
+                value="retail-login"
+                className="data-[state=active]:bg-gray-700/50 text-gray-300 text-xs transition-all duration-300 hover:bg-gray-600/30 cursor-pointer"
+              >
+                Retail Login
+              </TabsTrigger>
+              <TabsTrigger
+                value="warehouse-login"
+                className="data-[state=active]:bg-gray-700/50 text-gray-300 text-xs transition-all duration-300 hover:bg-gray-600/30 cursor-pointer"
+              >
+                Warehouse
+              </TabsTrigger>
+              <TabsTrigger
+                value="signup"
+                className="data-[state=active]:bg-gray-700/50 text-gray-300 text-xs transition-all duration-300 hover:bg-gray-600/30 cursor-pointer"
+              >
+                New Shop
+              </TabsTrigger>
+            </TabsList>
 
-          {/* tabs */}
-          {!sidebarCollapsed && (
-            <div className="flex-1 overflow-y-auto p-4">
-              <Tabs defaultValue="boxes" className="w-full">
-                <TabsList className="grid w-full grid-cols-4 bg-gray-800 border border-primary/20">
-                  {[
-                    { value: "boxes", icon: Package },
-                    { value: "physics", icon: Zap },
-                    { value: "control", icon: Settings },
-                    { value: "reports", icon: FileText },
-                  ].map(({ value, icon: Icon }) => (
-                    <TabsTrigger
-                      key={value}
-                      value={value}
-                      className="text-xs text-primary data-[state=active]:bg-primary/20 data-[state=active]:text-white"
+            <TabsContent value="retail-login">
+              <Card className="bg-gray-900/20 border-gray-700/50 backdrop-blur-md hover:bg-gray-900/30 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-500/10">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Store className="h-5 w-5 animate-pulse" />
+                    Retail Login
+                  </CardTitle>
+                  <CardDescription className="text-gray-400">
+                    Enter your retail ID and password to access your dashboard
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleRetailLogin} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="retailId" className="text-gray-300">
+                        Retail ID
+                      </Label>
+                      <Input
+                        id="retailId"
+                        type="text"
+                        placeholder="Enter your retail ID"
+                        value={retailLoginData.retailId}
+                        onChange={(e) => setRetailLoginData({ ...retailLoginData, retailId: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-blue-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="password" className="text-gray-300">
+                        Password
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="Enter your password"
+                        value={retailLoginData.password}
+                        onChange={(e) => setRetailLoginData({ ...retailLoginData, password: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-blue-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full bg-gradient-to-r from-blue-600/80 to-blue-700/80 hover:from-blue-700 hover:to-blue-800 transition-all duration-300 transform hover:scale-105 cursor-pointer backdrop-blur-sm"
                     >
-                      <Icon className="h-4 w-4" />
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+                      Login to Dashboard
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                <TabsContent value="boxes" className="mt-4">
-                  <BoxManager />
-                </TabsContent>
-
-                <TabsContent value="physics" className="mt-4">
-                  <PhysicsPanel />
-                  <div className="mt-4">
-                    <SimulationControls />
+            <TabsContent value="warehouse-login">
+              <Card className="bg-gray-900/20 border-gray-700/50 backdrop-blur-md hover:bg-gray-900/30 transition-all duration-300 hover:shadow-2xl hover:shadow-red-500/10">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Shield className="h-5 w-5 animate-pulse" />
+                    Warehouse Admin Login
+                  </CardTitle>
+                  <CardDescription className="text-gray-400">Authorized warehouse personnel only</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleWarehouseLogin} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="warehouseUsername" className="text-gray-300">
+                        Username
+                      </Label>
+                      <Input
+                        id="warehouseUsername"
+                        type="text"
+                        placeholder="warehouse_admin"
+                        value={warehouseLoginData.username}
+                        onChange={(e) => setWarehouseLoginData({ ...warehouseLoginData, username: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-red-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="warehousePassword" className="text-gray-300">
+                        Password
+                      </Label>
+                      <Input
+                        id="warehousePassword"
+                        type="password"
+                        placeholder="Enter warehouse password"
+                        value={warehouseLoginData.password}
+                        onChange={(e) => setWarehouseLoginData({ ...warehouseLoginData, password: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-red-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-700 hover:to-red-800 transition-all duration-300 transform hover:scale-105 cursor-pointer backdrop-blur-sm"
+                    >
+                      Access Warehouse System
+                    </Button>
+                  </form>
+                  <div className="mt-4 p-3 bg-gray-800/30 rounded-lg backdrop-blur-sm border border-gray-700/50">
+                    <p className="text-xs text-gray-400 text-center">
+                      Demo Credentials:
+                      <br />
+                      Username: warehouse_admin
+                      <br />
+                      Password: walmart2024
+                    </p>
                   </div>
-                </TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                <TabsContent value="control" className="mt-4">
-                  <ControlPanel />
-                </TabsContent>
-
-                <TabsContent value="reports" className="mt-4">
-                  <ReportGenerator />
-                </TabsContent>
-              </Tabs>
-            </div>
-          )}
-        </div>
-
-        {/* visualization pane */}
-        <div className="flex-1 flex flex-col">
-          {/* toolbar */}
-          <div className="p-4 border-b border-primary/30 bg-[#0f0f10]/30">
-            <div className="flex items-center justify-between">
-              {/* view toggles */}
-              <div className="flex space-x-2">
-                {(["3d", "2d", "hybrid", "map"] as const).map((v) => (
-                  <Button
-                    key={v}
-                    variant={activeView === v ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveView(v)}
-                  >
-                    {v === "map" ? (
-                      <>
-                        <Map className="h-4 w-4 mr-1" /> Map View
-                      </>
-                    ) : (
-                      `${v.toUpperCase()} View`
-                    )}
-                  </Button>
-                ))}
-                <Button
-                  variant={isSimulationRunning ? "destructive" : "secondary"}
-                  size="sm"
-                  onClick={isSimulationRunning ? stopSimulation : runSimulation}
-                  className="ml-4"
-                >
-                  <Play className="h-4 w-4 mr-1" />
-                  {isSimulationRunning ? "Stop Simulation" : "Run Simulation"}
-                </Button>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="bg-primary text-white px-2 py-1 rounded" onClick={handleoptim}>Optimize</button>
-              </div>
-
-              {/* quick stats */}
-              <div className="flex items-center space-x-4 text-sm">
-                {[
-                  ["Volume", volumeUtilization.toFixed(1) + "%"],
-                  ["Weight", weightUtilization.toFixed(1) + "%"],
-                  ["Boxes", boxes.length],
-                ].map(([label, val]) => (
-                  <div key={label} className="flex items-center space-x-2">
-                    <span className="text-primary">{label}:</span>
-                    <span className="font-bold">{val}</span>
-                  </div>
-                ))}
-                {isSimulationRunning && (
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                    <span className="text-red-400 font-bold">
-                      SIMULATION ACTIVE
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* canvas / map */}
-          <div className="flex-1 relative bg-[#0f0f10]">
-            {activeView === "map" ? (
-              <MapVisualization />
-            ) : (
-              <TruckVisualization viewMode={activeView} />
-            )}
-          </div>
+            <TabsContent value="signup">
+              <Card className="bg-gray-900/20 border-gray-700/50 backdrop-blur-md hover:bg-gray-900/30 transition-all duration-300 hover:shadow-2xl hover:shadow-green-500/10">
+                <CardHeader>
+                  <CardTitle className="text-white">Create New Retail Account</CardTitle>
+                  <CardDescription className="text-gray-400">
+                    Register your retail shop with Walmart warehouse system
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSignup} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="shopName" className="text-gray-300">
+                        Shop Name
+                      </Label>
+                      <Input
+                        id="shopName"
+                        type="text"
+                        placeholder="Enter your shop name"
+                        value={signupData.shopName}
+                        onChange={(e) => setSignupData({ ...signupData, shopName: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newRetailId" className="text-gray-300">
+                        Retail ID
+                      </Label>
+                      <Input
+                        id="newRetailId"
+                        type="text"
+                        placeholder="Choose a retail ID"
+                        value={signupData.retailId}
+                        onChange={(e) => setSignupData({ ...signupData, retailId: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address" className="text-gray-300">
+                        Address
+                      </Label>
+                      <Input
+                        id="address"
+                        type="text"
+                        placeholder="Shop address"
+                        value={signupData.address}
+                        onChange={(e) => setSignupData({ ...signupData, address: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone" className="text-gray-300">
+                        Phone Number
+                      </Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        placeholder="Contact number"
+                        value={signupData.phone}
+                        onChange={(e) => setSignupData({ ...signupData, phone: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newPassword" className="text-gray-300">
+                        Password
+                      </Label>
+                      <Input
+                        id="newPassword"
+                        type="password"
+                        placeholder="Create password"
+                        value={signupData.password}
+                        onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmPassword" className="text-gray-300">
+                        Confirm Password
+                      </Label>
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        placeholder="Confirm password"
+                        value={signupData.confirmPassword}
+                        onChange={(e) => setSignupData({ ...signupData, confirmPassword: e.target.value })}
+                        className="bg-gray-800/30 border-gray-700/50 text-white placeholder:text-gray-500 focus:border-green-500 transition-all duration-300 cursor-pointer backdrop-blur-sm"
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full bg-gradient-to-r from-green-600/80 to-green-700/80 hover:from-green-700 hover:to-green-800 transition-all duration-300 transform hover:scale-105 cursor-pointer backdrop-blur-sm"
+                    >
+                      Create Account
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
-      {/* Status Panel - Non-intrusive floating panel */}
-      <StatusPanel />
+      <style jsx>{`
+        @keyframes fade-in-up {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-10px);
+          }
+        }
+        
+        .animate-fade-in-up {
+          animation: fade-in-up 0.8s ease-out forwards;
+        }
+        
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+      `}</style>
     </div>
-  );
+  )
 }

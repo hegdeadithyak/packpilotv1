@@ -7,13 +7,19 @@ const nextConfig = {
       asyncWebAssembly: true,
       syncWebAssembly: true,
     };
+    
+    config.module.rules.push({
+      test: /\.svg$/,
+      issuer: /\.(js|ts|mjs)x?$/,
+      use: ['@svgr/webpack'],
+    });
 
-    // Add rule for loading .wasm files
+    // Add rule fo  r loading .wasm files
     config.module.rules.push({
       test: /\.wasm$/,
       type: 'webassembly/async',
     });
-
+    
     // Add rule for worker files
     config.module.rules.push({
       test: /\.worker\.(js|ts)$/,

@@ -3,7 +3,6 @@
 import { create } from "zustand"
 import type { Box } from "@/types/box"
 import { sampleBoxes } from "@/data/sample-boxes"
-
 interface PhysicsStats {
   collisions: number
   contacts: number
@@ -46,6 +45,8 @@ interface OptimizationState {
     cold: string[]
     frozen: string[]
   }
+
+  
 
   // Actions
   loadSampleData: () => void
