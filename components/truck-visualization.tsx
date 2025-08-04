@@ -12,13 +12,16 @@ import { TwoDRenderer } from "@/components/2d/two-d-renderer"
 import { useOptimizationStore } from "@/store/optimization-store"
 import { useFrame } from "@react-three/fiber"
 import { RouteStopsManager } from '@/utils/stop-manager'
-import { 
-  PhysicsSimulationController, 
-  EnhancedBoxRenderer, 
+import {
+  PhysicsSimulationController,
+  EnhancedBoxRenderer,
   TruckBedPhysics,
-  useTruckPhysics 
+  useTruckPhysics
 } from "@/physics/truck-physics-system"
 import * as THREE from "three"
+
+// Route Store for synchronization
+import { create } from 'zustand'
 
 interface TruckVisualizationProps {
   viewMode: "3d" | "2d" | "hybrid"
@@ -85,6 +88,119 @@ interface DeliveryStop {
   order: number
   estimatedArrival?: string
   isCompleted: boolean
+  name: string // Display name for the stop - now just "Stop 1", "Stop 2", etc.
+}
+
+// Route Store for synchronized destinations
+interface RouteStore {
+  deliveryStops: DeliveryStop[]
+  addDeliveryStop: (warehouse: Warehouse) => void
+  removeDeliveryStop: (stopId: string) => void
+  reorderStop: (stopId: string, direction: 'up' | 'down') => void
+  toggleStopCompletion: (stopId: string) => void
+  getAvailableDestinations: () => string[]
+}
+
+export const useRouteStore = create<RouteStore>((set, get) => ({
+  deliveryStops: [],
+  
+  addDeliveryStop: (warehouse) => {
+    const { deliveryStops } = get()
+    const newStop: DeliveryStop = {
+      id: `stop-${Date.now()}-${warehouse.id}`,
+      warehouseId: warehouse.id,
+      warehouse,
+      order: deliveryStops.length + 1,
+      isCompleted: false,
+      name: `Stop ${deliveryStops.length + 1}` // Simple format: "Stop 1", "Stop 2", etc.
+    }
+    const updatedStops = [...deliveryStops, newStop]
+    set({ deliveryStops: updatedStops })
+    
+    // Sync with optimization store
+    syncDestinationsWithRoute(updatedStops)
+  },
+  
+  removeDeliveryStop: (stopId) => {
+    const { deliveryStops } = get()
+    const removedStop = deliveryStops.find(s => s.id === stopId)
+    const updated = deliveryStops
+      .filter(stop => stop.id !== stopId)
+      .map((stop, index) => ({ 
+        ...stop, 
+        order: index + 1,
+        name: `Stop ${index + 1}` // Simple format after reordering
+      }))
+    
+    set({ deliveryStops: updated })
+    
+    // Clear boxes assigned to removed stop and sync
+    if (removedStop) {
+      reassignBoxesFromRemovedStop(removedStop.name)
+    }
+    syncDestinationsWithRoute(updated)
+  },
+  
+  reorderStop: (stopId, direction) => {
+    const { deliveryStops } = get()
+    const stopIndex = deliveryStops.findIndex(stop => stop.id === stopId)
+    if (stopIndex === -1) return
+
+    const newStops = [...deliveryStops]
+    const targetIndex = direction === 'up' ? stopIndex - 1 : stopIndex + 1
+
+    if (targetIndex < 0 || targetIndex >= newStops.length) return
+
+    // Swap stops
+    ;[newStops[stopIndex], newStops[targetIndex]] = [newStops[targetIndex], newStops[stopIndex]]
+
+    // Update order numbers and names
+    const reorderedStops = newStops.map((stop, index) => ({ 
+      ...stop, 
+      order: index + 1,
+      name: `Stop ${index + 1}` // Simple format after reordering
+    }))
+    
+    set({ deliveryStops: reorderedStops })
+    syncDestinationsWithRoute(reorderedStops)
+  },
+  
+  toggleStopCompletion: (stopId) => {
+    const { deliveryStops } = get()
+    const updated = deliveryStops.map(stop =>
+      stop.id === stopId ? { ...stop, isCompleted: !stop.isCompleted } : stop
+    )
+    set({ deliveryStops: updated })
+  },
+  
+  getAvailableDestinations: () => {
+    const { deliveryStops } = get()
+    return deliveryStops.map(stop => stop.name)
+  }
+}))
+
+// Sync functions
+const syncDestinationsWithRoute = (deliveryStops: DeliveryStop[]) => {
+  const { boxes, updateBox } = useOptimizationStore.getState()
+  const availableDestinations = deliveryStops.map(stop => stop.name)
+  
+  // Update boxes with invalid destinations
+  boxes.forEach(box => {
+    if (box.destination && !availableDestinations.includes(box.destination)) {
+      updateBox(box.id, { destination: '' })
+    }
+  })
+}
+
+const reassignBoxesFromRemovedStop = (removedStopName: string) => {
+  const { boxes, updateBox } = useOptimizationStore.getState()
+  
+  // Clear destination for boxes assigned to removed stop
+  boxes.forEach(box => {
+    if (box.destination === removedStopName) {
+      updateBox(box.id, { destination: '' })
+    }
+  })
 }
 
 // Global state to avoid re-renders
@@ -97,12 +213,11 @@ let globalSelectCallbacks: Set<(box: SelectedBoxInfo | null) => void> = new Set(
 import { suspend } from 'suspend-react'
 const bridge = import('@pmndrs/assets/hdri/warehouse.exr')
 
-// Enhanced Orders Panel Component with Warehouse Stop Management
+// Enhanced Orders Panel Component with Warehouse Stop Management and Route Sync
 function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([])
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
-  const [deliveryStops, setDeliveryStops] = useState<DeliveryStop[]>([])
   const [loading, setLoading] = useState(true)
   const [warehousesLoading, setWarehousesLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,6 +227,18 @@ function OrdersPanel() {
   const [activeTab, setActiveTab] = useState<'orders' | 'stops'>('orders')
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(['pending', 'confirmed', 'in_transit', 'delivered']))
   const [showAddStopModal, setShowAddStopModal] = useState(false)
+
+  // Route store integration
+  const { 
+    deliveryStops, 
+    addDeliveryStop, 
+    removeDeliveryStop, 
+    reorderStop, 
+    toggleStopCompletion,
+    getAvailableDestinations 
+  } = useRouteStore()
+  
+  const { boxes } = useOptimizationStore()
 
   // Load orders from API
   const loadOrders = async () => {
@@ -170,7 +297,7 @@ function OrdersPanel() {
   const updateOrderStatus = async (orderId: number, newStatus: string) => {
     try {
       setUpdatingStatus(prev => new Set(prev).add(orderId))
-      
+
       const response = await fetch(`http://localhost:3001/api/orders`, {
         method: 'PUT',
         headers: {
@@ -183,9 +310,9 @@ function OrdersPanel() {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      setOrders(prevOrders => 
-        prevOrders.map(order => 
-          order.id === orderId 
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === orderId
             ? { ...order, status: newStatus }
             : order
         )
@@ -202,60 +329,15 @@ function OrdersPanel() {
     }
   }
 
-  // Add delivery stop
-  const addDeliveryStop = (warehouseId: number) => {
-    const warehouse = warehouses.find(w => w.id === warehouseId)
-    if (!warehouse) return
-
-    const newStop: DeliveryStop = {
-      id: `stop-${Date.now()}-${warehouseId}`,
-      warehouseId,
-      warehouse,
-      order: deliveryStops.length + 1,
-      isCompleted: false
-    }
-
-    setDeliveryStops(prev => [...prev, newStop])
-    setShowAddStopModal(false)
+  // Get box count and weight for a stop
+  const getStopBoxCount = (stopName: string) => {
+    return boxes.filter(box => box.destination === stopName).length
   }
 
-  // Remove delivery stop
-  const removeDeliveryStop = (stopId: string) => {
-    setDeliveryStops(prev => {
-      const updated = prev.filter(stop => stop.id !== stopId)
-      // Reorder the remaining stops
-      return updated.map((stop, index) => ({ ...stop, order: index + 1 }))
-    })
-  }
-
-  // Reorder delivery stops
-  const reorderStop = (stopId: string, direction: 'up' | 'down') => {
-    setDeliveryStops(prev => {
-      const stopIndex = prev.findIndex(stop => stop.id === stopId)
-      if (stopIndex === -1) return prev
-
-      const newStops = [...prev]
-      const targetIndex = direction === 'up' ? stopIndex - 1 : stopIndex + 1
-
-      if (targetIndex < 0 || targetIndex >= newStops.length) return prev
-
-      // Swap stops
-      [newStops[stopIndex], newStops[targetIndex]] = [newStops[targetIndex], newStops[stopIndex]]
-
-      // Update order numbers
-      return newStops.map((stop, index) => ({ ...stop, order: index + 1 }))
-    })
-  }
-
-  // Toggle stop completion
-  const toggleStopCompletion = (stopId: string) => {
-    setDeliveryStops(prev =>
-      prev.map(stop =>
-        stop.id === stopId
-          ? { ...stop, isCompleted: !stop.isCompleted }
-          : stop
-      )
-    )
+  const getStopWeight = (stopName: string) => {
+    return boxes
+      .filter(box => box.destination === stopName)
+      .reduce((sum, box) => sum + box.weight, 0)
   }
 
   // Toggle status filter
@@ -304,15 +386,15 @@ function OrdersPanel() {
   const getFilterButtonColor = (status: string) => {
     const isSelected = selectedStatuses.has(status)
     switch (status) {
-      case 'pending': 
+      case 'pending':
         return isSelected ? 'bg-yellow-600 text-white' : 'bg-yellow-900/30 text-yellow-400 hover:bg-yellow-800/50'
-      case 'confirmed': 
+      case 'confirmed':
         return isSelected ? 'bg-blue-600 text-white' : 'bg-blue-900/30 text-blue-400 hover:bg-blue-800/50'
-      case 'in_transit': 
+      case 'in_transit':
         return isSelected ? 'bg-orange-600 text-white' : 'bg-orange-900/30 text-orange-400 hover:bg-orange-800/50'
-      case 'delivered': 
+      case 'delivered':
         return isSelected ? 'bg-green-600 text-white' : 'bg-green-900/30 text-green-400 hover:bg-green-800/50'
-      default: 
+      default:
         return isSelected ? 'bg-gray-600 text-white' : 'bg-gray-900/30 text-gray-400 hover:bg-gray-800/50'
     }
   }
@@ -325,7 +407,7 @@ function OrdersPanel() {
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold text-cyan-400">
-            {activeTab === 'orders' ? '📦 Orders' : '🚛 Route Stops'}
+            {activeTab === 'orders' ? '📦 Orders' : '🚛 Route Planning'}
           </h3>
           <span className="text-xs bg-gray-700 px-2 py-1 rounded">
             {activeTab === 'orders' ? `${filteredOrders.length}/${orders.length}` : deliveryStops.length}
@@ -335,9 +417,8 @@ function OrdersPanel() {
           {activeTab === 'orders' && (
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`px-2 py-1 rounded text-xs transition-colors ${
-                showFilters ? 'bg-cyan-600 text-white' : 'bg-gray-600 text-white hover:bg-gray-700'
-              }`}
+              className={`px-2 py-1 rounded text-xs transition-colors ${showFilters ? 'bg-cyan-600 text-white' : 'bg-gray-600 text-white hover:bg-gray-700'
+                }`}
               title="Filter orders"
             >
               🔽
@@ -364,21 +445,19 @@ function OrdersPanel() {
         <div className="flex border-b border-gray-700">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-              activeTab === 'orders'
+            className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${activeTab === 'orders'
                 ? 'bg-cyan-600 text-white'
                 : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-            }`}
+              }`}
           >
             📦 Orders
           </button>
           <button
             onClick={() => setActiveTab('stops')}
-            className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
-              activeTab === 'stops'
+            className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${activeTab === 'stops'
                 ? 'bg-cyan-600 text-white'
                 : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-            }`}
+              }`}
           >
             🚛 Route Stops
           </button>
@@ -405,7 +484,7 @@ function OrdersPanel() {
               </button>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-2">
             {statusOptions.map((status) => (
               <button
@@ -422,7 +501,7 @@ function OrdersPanel() {
               </button>
             ))}
           </div>
-          
+
           <div className="mt-3 text-xs text-gray-400">
             {selectedStatuses.size === 0 ? (
               <span className="text-red-400">No statuses selected - showing 0 orders</span>
@@ -469,8 +548,8 @@ function OrdersPanel() {
                 <div className="text-center py-8 text-gray-400">
                   <div className="text-2xl mb-2">📭</div>
                   <div>
-                    {selectedStatuses.size === 0 
-                      ? 'No status filters selected' 
+                    {selectedStatuses.size === 0
+                      ? 'No status filters selected'
                       : 'No orders match the selected filters'
                     }
                   </div>
@@ -537,7 +616,7 @@ function OrdersPanel() {
                           </option>
                         ))}
                       </select>
-                      
+
                       {updatingStatus.has(order.id) && (
                         <div className="animate-spin w-4 h-4 border border-cyan-400 border-t-transparent rounded-full"></div>
                       )}
@@ -552,7 +631,7 @@ function OrdersPanel() {
             </div>
           )}
 
-          {/* Route Stops Tab Content */}
+          {/* Enhanced Route Stops Tab Content */}
           {activeTab === 'stops' && !warehousesLoading && !error && (
             <div className="space-y-3">
               {/* Add Stop Button */}
@@ -563,87 +642,142 @@ function OrdersPanel() {
                 + Add Warehouse Stop
               </button>
 
+              {/* Route Overview */}
+              {deliveryStops.length > 0 && (
+                <div className="mb-4 p-3 bg-gray-800/30 rounded border border-gray-700">
+                  <h4 className="text-sm font-medium text-cyan-400 mb-2">Route Overview</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Stops:</span>
+                      <span className="text-white">{deliveryStops.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Completed:</span>
+                      <span className="text-green-400">
+                        {deliveryStops.filter(s => s.isCompleted).length}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Boxes:</span>
+                      <span className="text-white">
+                        {deliveryStops.reduce((sum, stop) => sum + getStopBoxCount(stop.name), 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Weight:</span>
+                      <span className="text-white">
+                        {deliveryStops.reduce((sum, stop) => sum + getStopWeight(stop.name), 0).toLocaleString()} lbs
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Delivery Stops List */}
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {deliveryStops.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
                     <div className="text-2xl mb-2">🏭</div>
                     <div>No delivery stops added</div>
-                    <div className="text-xs mt-2">Click "Add Warehouse Stop" to start planning your route</div>
+                    <div className="text-xs mt-2">Add warehouse stops to enable box destination assignment</div>
                   </div>
                 ) : (
-                  deliveryStops.map((stop, index) => (
-                    <div key={stop.id} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                            stop.isCompleted ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
-                          }`}>
-                            {stop.order}
+                  deliveryStops.map((stop, index) => {
+                    const boxCount = getStopBoxCount(stop.name)
+                    const weight = getStopWeight(stop.name)
+                    
+                    return (
+                      <div key={stop.id} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                              stop.isCompleted ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
+                            }`}>
+                              {stop.order}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-white">{stop.warehouse.name}</div>
+                              <div className="text-xs text-gray-400">{stop.warehouse.address}</div>
+                              <div className="text-xs text-cyan-400 font-medium">{stop.name}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="text-sm font-medium text-white">{stop.warehouse.name}</div>
-                            <div className="text-xs text-gray-400">{stop.warehouse.address}</div>
+                          <div className="flex gap-1">
+                            {index > 0 && (
+                              <button
+                                onClick={() => reorderStop(stop.id, 'up')}
+                                className="p-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-500"
+                                title="Move up"
+                              >
+                                ↑
+                              </button>
+                            )}
+                            {index < deliveryStops.length - 1 && (
+                              <button
+                                onClick={() => reorderStop(stop.id, 'down')}
+                                className="p-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-500"
+                                title="Move down"
+                              >
+                                ↓
+                              </button>
+                            )}
+                            <button
+                              onClick={() => removeDeliveryStop(stop.id)}
+                              className="p-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                              title="Remove stop"
+                            >
+                              ×
+                            </button>
                           </div>
                         </div>
-                        <div className="flex gap-1">
-                          {index > 0 && (
-                            <button
-                              onClick={() => reorderStop(stop.id, 'up')}
-                              className="p-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-500"
-                              title="Move up"
-                            >
-                              ↑
-                            </button>
+
+                        {/* Enhanced Stop Details */}
+                        <div className="space-y-1 text-xs text-gray-300 mb-3">
+                          <div className="flex justify-between">
+                            <span>Assigned Boxes:</span>
+                            <span className={`font-medium ${boxCount > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                              {boxCount} boxes
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Total Weight:</span>
+                            <span className="text-white">{weight.toLocaleString()} lbs</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Capacity:</span>
+                            <span className="text-white">{stop.warehouse.capacity?.toLocaleString()} units</span>
+                          </div>
+                          {stop.warehouse.coordinates && (
+                            <div className="flex justify-between">
+                              <span>Location:</span>
+                              <span className="text-white font-mono text-xs">
+                                {stop.warehouse.coordinates.lat.toFixed(2)}, {stop.warehouse.coordinates.lng.toFixed(2)}
+                              </span>
+                            </div>
                           )}
-                          {index < deliveryStops.length - 1 && (
-                            <button
-                              onClick={() => reorderStop(stop.id, 'down')}
-                              className="p-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-500"
-                              title="Move down"
-                            >
-                              ↓
-                            </button>
-                          )}
+                        </div>
+
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => removeDeliveryStop(stop.id)}
-                            className="p-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                            title="Remove stop"
+                            onClick={() => toggleStopCompletion(stop.id)}
+                            className={`flex-1 py-1 px-2 rounded text-xs transition-colors ${
+                              stop.isCompleted
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-600 text-white hover:bg-gray-500'
+                            }`}
                           >
-                            ×
+                            {stop.isCompleted ? '✓ Completed' : 'Mark Complete'}
                           </button>
                         </div>
-                      </div>
 
-                      <div className="space-y-1 text-xs text-gray-300 mb-3">
-                        <div className="flex justify-between">
-                          <span>Capacity:</span>
-                          <span className="text-white">{stop.warehouse.capacity?.toLocaleString()} units</span>
-                        </div>
-                        {stop.warehouse.coordinates && (
-                          <div className="flex justify-between">
-                            <span>Location:</span>
-                            <span className="text-white font-mono">
-                              {stop.warehouse.coordinates.lat.toFixed(4)}, {stop.warehouse.coordinates.lng.toFixed(4)}
-                            </span>
+                        {/* Box Assignment Warning */}
+                        {boxCount === 0 && (
+                          <div className="mt-2 p-2 bg-yellow-900/30 border border-yellow-600 rounded text-xs text-yellow-400">
+                            ⚠️ No boxes assigned to this stop
                           </div>
                         )}
                       </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => toggleStopCompletion(stop.id)}
-                          className={`flex-1 py-1 px-2 rounded text-xs transition-colors ${
-                            stop.isCompleted
-                              ? 'bg-green-600 text-white hover:bg-green-700'
-                              : 'bg-gray-600 text-white hover:bg-gray-500'
-                          }`}
-                        >
-                          {stop.isCompleted ? '✓ Completed' : 'Mark Complete'}
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
 
@@ -691,7 +825,7 @@ function OrdersPanel() {
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-600 w-80 max-h-96 overflow-y-auto">
             <h3 className="text-lg font-semibold text-cyan-400 mb-4">Add Warehouse Stop</h3>
-            
+
             {warehouses.length === 0 ? (
               <div className="text-center py-4 text-gray-400">
                 No warehouses available
@@ -703,7 +837,7 @@ function OrdersPanel() {
                   return (
                     <button
                       key={warehouse.id}
-                      onClick={() => addDeliveryStop(warehouse.id)}
+                      onClick={() => addDeliveryStop(warehouse)}
                       disabled={isAlreadyAdded}
                       className={`w-full text-left p-3 rounded border transition-colors ${
                         isAlreadyAdded
@@ -722,7 +856,7 @@ function OrdersPanel() {
                 })}
               </div>
             )}
-            
+
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setShowAddStopModal(false)}
@@ -738,14 +872,25 @@ function OrdersPanel() {
   )
 }
 
-// Enhanced Box Tooltip Component
+// Enhanced Box Tooltip Component with Route Info
 function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
   const { isSimulationRunning } = useOptimizationStore()
-  
+  const { deliveryStops } = useRouteStore()
+
   if (!hoveredBox || isSimulationRunning) return null
 
+  const getDestinationInfo = (destination: string) => {
+    const stop = deliveryStops.find(s => s.name === destination)
+    return {
+      color: stop ? (stop.isCompleted ? 'text-green-400' : 'text-blue-400') : 'text-gray-400',
+      status: stop ? (stop.isCompleted ? '✓ Completed' : '🚛 Pending') : '❌ Invalid'
+    }
+  }
+
+  const destInfo = hoveredBox.destination ? getDestinationInfo(hoveredBox.destination) : null
+
   return (
-    <div 
+    <div
       className="fixed pointer-events-none z-50 bg-gray-900/95 text-white p-3 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm"
       style={{
         left: hoveredBox.screenPosition.x + 15,
@@ -754,32 +899,32 @@ function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
       }}
     >
       <div className="text-sm font-semibold text-cyan-400 mb-2">{hoveredBox.name}</div>
-      
+
       <div className="space-y-1 text-xs">
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">ID:</span>
           <span className="text-white font-mono">{hoveredBox.id}</span>
         </div>
-        
+
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Dimensions:</span>
           <span className="text-white font-mono">
             {hoveredBox.dimensions.width}×{hoveredBox.dimensions.height}×{hoveredBox.dimensions.length} ft
           </span>
         </div>
-        
+
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Weight:</span>
           <span className="text-white font-mono">{hoveredBox.weight} lbs</span>
         </div>
-        
+
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Position:</span>
           <span className="text-white font-mono">
             X:{hoveredBox.position.x.toFixed(1)}, Y:{hoveredBox.position.y.toFixed(1)}, Z:{hoveredBox.position.z.toFixed(1)}
           </span>
         </div>
-        
+
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Temperature:</span>
           <span className={`font-medium ${
@@ -789,19 +934,24 @@ function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
             {hoveredBox.temperatureZone.toUpperCase()}
           </span>
         </div>
-        
+
+        {/* Enhanced Destination Info */}
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Destination:</span>
-          <span className={`font-medium ${
-            hoveredBox.destination === 'Stop 1' ? 'text-red-400' :
-            hoveredBox.destination === 'Stop 2' ? 'text-orange-400' :
-            hoveredBox.destination === 'Stop 3' ? 'text-green-400' :
-            hoveredBox.destination === 'Stop 4' ? 'text-blue-400' : 'text-yellow-400'
-          }`}>
-            {hoveredBox.destination}
-          </span>
+          {hoveredBox.destination ? (
+            <div className="text-right">
+              <div className={`font-medium ${destInfo?.color}`}>
+                {hoveredBox.destination}
+              </div>
+              <div className={`text-xs ${destInfo?.color}`}>
+                {destInfo?.status}
+              </div>
+            </div>
+          ) : (
+            <span className="text-orange-400 font-medium">⚠️ UNASSIGNED</span>
+          )}
         </div>
-        
+
         {hoveredBox.isFragile && (
           <div className="flex justify-between gap-3">
             <span className="text-gray-300">Special:</span>
@@ -809,7 +959,7 @@ function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
           </div>
         )}
       </div>
-      
+
       <div className="mt-2 pt-2 border-t border-gray-700 space-y-1 text-xs">
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Volume:</span>
@@ -817,7 +967,7 @@ function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
             {(hoveredBox.dimensions.width * hoveredBox.dimensions.height * hoveredBox.dimensions.length).toFixed(1)} ft³
           </span>
         </div>
-        
+
         <div className="flex justify-between gap-3">
           <span className="text-gray-300">Density:</span>
           <span className="text-white font-mono">
@@ -825,9 +975,9 @@ function BoxTooltip({ hoveredBox }: { hoveredBox: HoveredBoxInfo | null }) {
           </span>
         </div>
       </div>
-      
+
       <div className="mt-2 pt-2 border-t border-gray-700 text-xs text-gray-400">
-        💡 Click to select and manipulate
+        💡 Click to select • Assign destination in Route Stops tab
       </div>
     </div>
   )
@@ -838,22 +988,22 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
   const { updateBoxPosition, updateBox } = useOptimizationStore()
   const [localPosition, setLocalPosition] = useState({ x: 0, y: 0, z: 0 })
   const [localRotation, setLocalRotation] = useState(false)
-  
+
   useEffect(() => {
     if (selectedBox) {
       setLocalPosition(selectedBox.position)
       setLocalRotation(selectedBox.isRotated || false)
     }
   }, [selectedBox?.id])
-  
+
   if (!selectedBox) return null
 
   const handlePositionChange = (axis: 'x' | 'y' | 'z', value: number) => {
     const newPosition = { ...localPosition, [axis]: value }
     setLocalPosition(newPosition)
-    
+
     updateBoxPosition(selectedBox.id, newPosition)
-    
+
     if (globalSelectedBox) {
       globalSelectedBox.position = newPosition
     }
@@ -862,12 +1012,12 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
   const handleRotationToggle = () => {
     const newRotation = !localRotation
     setLocalRotation(newRotation)
-    
+
     updateBox(selectedBox.id, {
       //@ts-ignore 
       isRotated: newRotation,
     })
-    
+
     if (globalSelectedBox) {
       globalSelectedBox.isRotated = newRotation
       globalSelectedBox.rotation.y = newRotation ? Math.PI / 2 : 0
@@ -877,28 +1027,26 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
   return (
     <div className="absolute top-20 right-4 z-10 bg-gray-900/95 text-white p-4 rounded-lg border border-gray-600 shadow-xl backdrop-blur-sm">
       <div className="text-sm font-semibold text-cyan-400 mb-3">Manual Control: {selectedBox.name}</div>
-      
+
       <div className="space-y-3 text-xs">
         <div className="pb-2 border-b border-gray-700">
           <label className="text-gray-300 block mb-2">Orientation:</label>
           <div className="flex gap-2">
             <button
               onClick={handleRotationToggle}
-              className={`px-3 py-1 rounded text-xs transition-colors ${
-                !localRotation 
-                  ? 'bg-blue-600 text-white' 
+              className={`px-3 py-1 rounded text-xs transition-colors ${!localRotation
+                  ? 'bg-blue-600 text-white'
                   : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-              }`}
+                }`}
             >
               Horizontal
             </button>
             <button
               onClick={handleRotationToggle}
-              className={`px-3 py-1 rounded text-xs transition-colors ${
-                localRotation 
-                  ? 'bg-blue-600 text-white' 
+              className={`px-3 py-1 rounded text-xs transition-colors ${localRotation
+                  ? 'bg-blue-600 text-white'
                   : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
-              }`}
+                }`}
             >
               Vertical
             </button>
@@ -907,7 +1055,7 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
             {localRotation ? "📦 Rotated 90°" : "📦 Default orientation"}
           </div>
         </div>
-        
+
         <div>
           <label className="text-gray-300 block mb-1">Position X:</label>
           <input
@@ -921,7 +1069,7 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
           />
           <span className="text-white font-mono">{localPosition.x.toFixed(1)}</span>
         </div>
-        
+
         <div>
           <label className="text-gray-300 block mb-1">Position Y:</label>
           <input
@@ -935,7 +1083,7 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
           />
           <span className="text-white font-mono">{localPosition.y.toFixed(1)}</span>
         </div>
-        
+
         <div>
           <label className="text-gray-300 block mb-1">Position Z:</label>
           <input
@@ -949,7 +1097,7 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
           />
           <span className="text-white font-mono">{localPosition.z.toFixed(1)}</span>
         </div>
-        
+
         <div className="pt-2 border-t border-gray-700">
           <button
             onClick={() => {
@@ -966,7 +1114,7 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
   )
 }
 
-// Optimized Interactive Box Renderer
+// Enhanced Interactive Box Renderer with Route-based Colors
 function InteractiveBoxRenderer({ box }: { box: any }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const groupRef = useRef<THREE.Group>(null)
@@ -975,12 +1123,13 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
   const [localPosition, setLocalPosition] = useState(box.position)
   const [localRotation, setLocalRotation] = useState(box.isRotated || false)
   const { isSimulationRunning } = useOptimizationStore()
-  
+  const { deliveryStops } = useRouteStore()
+
   useEffect(() => {
     const checkSelection = (selectedBox: SelectedBoxInfo | null) => {
       const selected = selectedBox?.id === box.id
       setIsSelected(selected)
-      
+
       if (selected && selectedBox) {
         setLocalPosition(selectedBox.position)
         setLocalRotation(selectedBox.isRotated || false)
@@ -989,34 +1138,34 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
     globalSelectCallbacks.add(checkSelection)
     return () => { globalSelectCallbacks.delete(checkSelection) }
   }, [box.id])
-  
+
   useEffect(() => {
     const threshold = 0.1
     if (Math.abs(localPosition.x - box.position.x) > threshold ||
-        Math.abs(localPosition.y - box.position.y) > threshold ||
-        Math.abs(localPosition.z - box.position.z) > threshold) {
+      Math.abs(localPosition.y - box.position.y) > threshold ||
+      Math.abs(localPosition.z - box.position.z) > threshold) {
       setLocalPosition(box.position)
     }
   }, [box.position])
-  
+
   useFrame(() => {
     if (groupRef.current && (isSelected || localPosition !== box.position)) {
       groupRef.current.position.set(localPosition.x, localPosition.y, localPosition.z)
       groupRef.current.rotation.y = localRotation ? Math.PI / 2 : 0
     }
   })
-  
+
   const handlePointerEnter = useCallback((event: any) => {
     if (isSimulationRunning) return
-    
+
     event.stopPropagation()
     setIsHovered(true)
-    
+
     const screenPosition = {
       x: event.clientX || event.nativeEvent?.clientX || 0,
       y: event.clientY || event.nativeEvent?.clientY || 0
     }
-    
+
     const hoveredInfo: HoveredBoxInfo = {
       id: box.id,
       name: box.name,
@@ -1028,29 +1177,29 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
       destination: box.destination,
       screenPosition
     }
-    
+
     globalHoveredBox = hoveredInfo
     globalHoverCallbacks.forEach(callback => callback(hoveredInfo))
   }, [box, localPosition, isSimulationRunning])
-  
+
   const handlePointerLeave = useCallback((event: any) => {
     if (isSimulationRunning) return
-    
+
     event.stopPropagation()
     setIsHovered(false)
-    
+
     globalHoveredBox = null
     globalHoverCallbacks.forEach(callback => callback(null))
   }, [isSimulationRunning])
-  
+
   const handlePointerMove = useCallback((event: any) => {
     if (!isHovered || isSimulationRunning) return
-    
+
     const screenPosition = {
       x: event.clientX || event.nativeEvent?.clientX || 0,
       y: event.clientY || event.nativeEvent?.clientY || 0
     }
-    
+
     if (globalHoveredBox) {
       globalHoveredBox.screenPosition = screenPosition
       globalHoverCallbacks.forEach(callback => callback(globalHoveredBox))
@@ -1059,9 +1208,9 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   const handleClick = useCallback((event: any) => {
     if (isSimulationRunning) return
-    
+
     event.stopPropagation()
-    
+
     const selectedInfo: SelectedBoxInfo = {
       id: box.id,
       name: box.name,
@@ -1069,12 +1218,19 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
       rotation: { x: 0, y: localRotation ? Math.PI / 2 : 0, z: 0 },
       isRotated: localRotation
     }
-    
+
     globalSelectedBox = selectedInfo
     globalSelectCallbacks.forEach(callback => callback(selectedInfo))
   }, [box, localPosition, localRotation, isSimulationRunning])
 
+  // Enhanced color logic based on destination
   const getBoxColor = (box: any) => {
+    // Priority: Destination > Fragile > Temperature
+    if (box.destination) {
+      const stopIndex = deliveryStops.findIndex(stop => stop.name === box.destination)
+      const colors = ["#ff6b6b", "#ffa726", "#66bb6a", "#42a5f5", "#ffee58", "#ab47bc"]
+      return colors[stopIndex % colors.length] || "#666666"
+    }
     if (box.isFragile) return "#ff6b6b"
     switch (box.temperatureZone) {
       case "frozen": return "#74c0fc"
@@ -1089,14 +1245,14 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   return (
     <group ref={groupRef} position={[localPosition.x, localPosition.y, localPosition.z]}>
-      <mesh 
+      <mesh
         ref={meshRef}
         rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
         onPointerMove={handlePointerMove}
         onClick={handleClick}
-        castShadow 
+        castShadow
         receiveShadow
       >
         <boxGeometry args={[box.width, box.height, box.length]} />
@@ -1109,36 +1265,38 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
           emissive={isHovered ? "#222222" : "#000000"}
           emissiveIntensity={isHovered ? 0.1 : 0}
         />
-        
+
         <mesh position={[0, box.height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[box.width * 0.8, box.length * 0.8]} />
-          <meshBasicMaterial 
-            color="#ffffff" 
-            transparent 
-            opacity={0.9} 
+          <meshBasicMaterial
+            color="#ffffff"
+            transparent
+            opacity={0.9}
           />
         </mesh>
       </mesh>
-      
+
+     
+
       {isSelected && (
         <mesh rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
           <boxGeometry args={[box.width + 0.1, box.height + 0.1, box.length + 0.1]} />
-          <meshBasicMaterial 
-            color="#ffff00" 
-            transparent 
+          <meshBasicMaterial
+            color="#ffff00"
+            transparent
             opacity={0.3}
-            wireframe 
+            wireframe
           />
         </mesh>
       )}
-      
+
       {localRotation && (
         <mesh position={[0, box.height / 2 + 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[0.5, 0.5]} />
-          <meshBasicMaterial 
-            color="#00ff00" 
-            transparent 
-            opacity={0.8} 
+          <meshBasicMaterial
+            color="#00ff00"
+            transparent
+            opacity={0.8}
           />
         </mesh>
       )}
@@ -1184,24 +1342,24 @@ function PerformanceStats() {
         <div className={`${fps > 60 ? "text-green-400" : fps > 30 ? "text-yellow-400" : "text-red-400"}`}>
           FPS: {fps}
         </div>
-        
+
         <div className="text-cyan-400">Render: {renderTime.toFixed(2)}ms</div>
         <div className="text-blue-400">Physics Objects: {physicsObjects}</div>
         <div className={`${isSimulationRunning ? "text-green-400" : "text-gray-400"}`}>
           Physics: {isSimulationRunning ? "ACTIVE" : "IDLE"}
         </div>
         <div className="text-gray-400">WebGL 2.0</div>
-        
+
         <button
           onClick={handleOptimize}
           disabled={boxes.length === 0}
           className={`
-            mt-2 px-3 py-1 rounded text-xs font-medium transition-all duration-200
-            ${boxes.length === 0
-              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                      mt-2 px-3 py-1 rounded text-xs font-medium transition-all duration-200
+                      ${boxes.length === 0
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
               : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
             }
-          `}
+                    `}
         >
           Optimize ({boxes.length})
         </button>
@@ -1241,7 +1399,7 @@ function PhysicsStatusIndicator() {
     <Html position={[-12, 6, 0]} className="pointer-events-none">
       <div className="bg-red-900/95 text-white p-3 rounded text-xs font-mono border border-red-600 shadow-xl backdrop-blur-sm">
         <div className="text-red-300 font-bold mb-2">🚛 TRUCK SIMULATION</div>
-        
+
         {truckPhysics.isAccelerating && (
           <div className="text-green-400">⬆️ ACCELERATING ({simulationForces.acceleration}g)</div>
         )}
@@ -1253,7 +1411,7 @@ function PhysicsStatusIndicator() {
             {truckPhysics.turnDirection < 0 ? "⬅️" : "➡️"} TURNING ({simulationForces.turning}g)
           </div>
         )}
-        
+
         <div className="text-gray-300 mt-2">
           Gravity: {simulationForces.gravity}g
         </div>
@@ -1264,7 +1422,7 @@ function PhysicsStatusIndicator() {
 
 function Scene() {
   const { boxes, physicsEnabled, truckDimensions, updatePhysics, isSimulationRunning } = useOptimizationStore()
-  
+
   const boxesKey = useMemo(() => {
     return boxes.map(b => `${b.id}-${b.position.x}-${b.position.y}-${b.position.z}`).join(',')
   }, [boxes])
@@ -1336,6 +1494,7 @@ function Scene() {
 export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { physicsEnabled, boxes, optimizeLayout, isSimulationRunning } = useOptimizationStore()
+  const { deliveryStops } = useRouteStore()
   const [forceUpdate, setForceUpdate] = useState(0)
   const [hoveredBox, setHoveredBox] = useState<HoveredBoxInfo | null>(null)
   const [selectedBox, setSelectedBox] = useState<SelectedBoxInfo | null>(null)
@@ -1380,6 +1539,23 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
     }
   }, [])
 
+  // Initialize route store with sample data if needed
+  useEffect(() => {
+    // Auto-populate some sample stops if none exist and boxes are loaded
+    if (deliveryStops.length === 0 && boxes.length > 0) {
+      const sampleWarehouses = [
+        { id: 1, name: "Downtown Warehouse", address: "123 Main St", capacity: 10000, coordinates: { lat: 40.7128, lng: -74.0060 }, orderWarehouses: [], deliveryRoutes: [] },
+        { id: 2, name: "North Distribution Center", address: "456 North Ave", capacity: 15000, coordinates: { lat: 40.7580, lng: -73.9855 }, orderWarehouses: [], deliveryRoutes: [] }
+      ]
+      
+      // Add first two as sample stops
+      setTimeout(() => {
+        useRouteStore.getState().addDeliveryStop(sampleWarehouses[0])
+        useRouteStore.getState().addDeliveryStop(sampleWarehouses[1])
+      }, 1000)
+    }
+  }, [deliveryStops.length, boxes.length])
+
   const handleOptimize = () => {
     console.log('🔄 Optimize button clicked from TruckVisualization')
     optimizeLayout()
@@ -1391,15 +1567,50 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
 
   return (
     <div className="relative w-full h-full bg-gray-900">
-      {/* Enhanced Orders Panel with Warehouse Stop Management */}
+      {/* Enhanced Orders Panel with Warehouse Stop Management and Route Sync */}
       <OrdersPanel />
-      
-      {/* Box Tooltip */}
+
+      {/* Enhanced Box Tooltip with Route Info */}
       <BoxTooltip hoveredBox={hoveredBox} />
-      
+
       {/* Manual Control Panel */}
       <BoxControlPanel selectedBox={selectedBox} />
-      
+
+      {/* Route Status Indicator - Updated to show simple names */}
+      {deliveryStops.length > 0 && (
+        <div className="absolute top-4 right-4 z-10 bg-gray-900/95 text-white p-3 rounded-lg border border-gray-600">
+          <h4 className="text-sm font-bold text-cyan-400 mb-2">🚛 Active Route</h4>
+          <div className="space-y-1 text-xs">
+            {deliveryStops.map((stop, index) => {
+              const boxCount = boxes.filter(box => box.destination === stop.name).length
+              return (
+                <div key={stop.id} className="flex justify-between gap-2">
+                  <span className={stop.isCompleted ? 'text-green-400' : 'text-white'}>
+                    {index + 1}. {stop.warehouse.name}
+                  </span>
+                
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Unassigned Boxes Warning */}
+      {(() => {
+        const unassignedCount = boxes.filter(box => !box.destination).length
+        return unassignedCount > 0 ? (
+          <div className="absolute bottom-4 left-4 z-10 bg-orange-900/95 text-white p-3 rounded-lg border border-orange-600">
+            <div className="text-sm font-bold text-orange-400">
+              ⚠️ {unassignedCount} Unassigned Box{unassignedCount !== 1 ? 'es' : ''}
+            </div>
+            <div className="text-xs text-orange-300 mt-1">
+              Add route stops and assign destinations
+            </div>
+          </div>
+        ) : null
+      })()}
+
       {/* 2D Overlay for Hybrid Mode */}
       {viewMode === "hybrid" && (
         <div className="absolute top-4 right-4 z-10 w-64 h-48 border border-gray-600 bg-gray-900/95 rounded-lg overflow-hidden">
@@ -1436,12 +1647,12 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
           onClick={handleOptimize}
           disabled={boxes.length === 0}
           className={`
-            px-6 py-3 rounded-lg font-medium transition-all duration-200 shadow-lg
-            ${boxes.length === 0
-              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                      px-6 py-3 rounded-lg font-medium transition-all duration-200 shadow-lg
+                      ${boxes.length === 0
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
               : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 hover:shadow-xl'
             }
-          `}
+                    `}
         >
           🚛 Optimize Layout ({boxes.length} boxes)
         </button>
@@ -1492,7 +1703,7 @@ export function TruckVisualization({ viewMode }: TruckVisualizationProps) {
             <Scene key={`scene-${forceUpdate}`} />
           </Physics>
         </Suspense>
-      </Canvas> 
+      </Canvas>
     </div>
   )
 }
