@@ -1,8 +1,11 @@
+// optimization-store.ts
 "use client"
 
 import { create } from "zustand"
 import type { Box } from "@/types/box"
 import { sampleBoxes } from "@/data/sample-boxes"
+
+// Define interfaces for better type safety
 interface PhysicsStats {
   collisions: number
   contacts: number
@@ -14,6 +17,27 @@ interface SimulationForces {
   braking: number
   turning: number
   gravity: number
+}
+
+// Define a simpler Box type for the packing algorithm to avoid circular dependencies if Box has Three.Vector3
+interface PackableBox extends Omit<Box, 'position'> {
+  // Position is managed by the packing algorithm, not directly stored as Vector3 here
+  // We will store simple x, y, z coordinates
+  position: { x: number; y: number; z: number };
+  originalId: string; // Keep track of original ID for score updates
+  rotation?: 'xy' | 'xz' | 'yz' | 'yx' | 'zx' | 'zy' | undefined; // For rotation awareness
+}
+
+// Interface for an empty space (void) in the truck
+interface Void {
+  id: string; // Unique ID for the void
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  height: number;
+  length: number;
+  volume: number;
 }
 
 interface OptimizationState {
@@ -46,7 +70,7 @@ interface OptimizationState {
     frozen: string[]
   }
 
-  
+
 
   // Actions
   loadSampleData: () => void
@@ -165,50 +189,82 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
       },
     })
   },
+  // Replace the runSimulation function in your optimization-store.ts
+  // In your optimization-store.ts, update runSimulation:
   runSimulation: () => {
+    console.log('🚀 Starting physics simulation with react-three/cannon')
     set({ isSimulationRunning: true })
 
-    setTimeout(() => {
+    // Add debug logging
+    console.log('📦 Boxes to simulate:', get().boxes.length)
+    console.log('🎮 Simulation forces:', get().simulationForces)
+
+    // The actual physics simulation is handled by the PhysicsBox components
+    const simulationInterval = setInterval(() => {
       const state = get()
-      if (state.isSimulationRunning) {
-        get().updatePhysics()
+      if (!state.isSimulationRunning) {
+        clearInterval(simulationInterval)
+        return
       }
-    }, 100)
-  },
 
-  // FIXED: Replace the stopSimulation and resetSimulation functions in your optimization-store.ts
-
-  stopSimulation: () => {
-    console.log('🛑 Stopping physics simulation without resetting positions')
-    set({ isSimulationRunning: false })
-
-    // FIXED: Don't reset positions when stopping simulation
-    // Just recalculate scores based on current positions
-    const state = get()
-    const scores = calculateAllScores(state.boxes, state.truckDimensions)
-
-    set({
-      stabilityScore: scores.stability,
-      safetyScore: scores.safety,
-      optimizationScore: scores.optimization,
-      physicsStats: {
+      // Update physics stats and log
+      const stats = {
         collisions: detectCollisions(state.boxes).length,
         contacts: calculateContacts(state.boxes),
         totalForce: calculateTotalForce(state.boxes),
-      },
-    })
+      }
+
+      console.log('📊 Physics stats:', stats)
+      set({ physicsStats: stats })
+    }, 500)
   },
 
-  resetSimulation: () => {
-    console.log('🔄 Resetting simulation and optimizing positions')
+  // FIXED: Replace the stopSimulation and resetSimulation functions in your optimization-store.ts
+  stopSimulation: () => {
+    console.log('🛑 Stopping physics simulation and updating final scores')
     set({ isSimulationRunning: false })
 
-    // FIXED: Only reset positions when explicitly requested (resetSimulation)
+    // Wait a moment for physics to settle, then update all scores
+    setTimeout(() => {
+      const state = get()
+      const scores = calculateAllScores(state.boxes, state.truckDimensions)
+      const sequence = generateOptimalLoadingSequence(state.boxes)
+      const zones = categorizeTemperatureZones(state.boxes)
+
+      set({
+        stabilityScore: scores.stability,
+        safetyScore: scores.safety,
+        optimizationScore: scores.optimization,
+        loadingSequence: sequence,
+        temperatureZones: zones,
+        physicsStats: {
+          collisions: detectCollisions(state.boxes).length,
+          contacts: calculateContacts(state.boxes),
+          totalForce: calculateTotalForce(state.boxes),
+        },
+      })
+
+      console.log('📊 Final simulation scores:', scores)
+    }, 100)
+  },
+
+  // Enhanced resetSimulation function
+  resetSimulation: () => {
+    console.log('🔄 Resetting simulation to optimized positions')
+    set({ isSimulationRunning: false })
+
+    // Reset to optimized positions
     const state = get()
     const optimizedBoxes = optimizeBoxPlacement(state.boxes, state.truckDimensions)
+
     set({ boxes: optimizedBoxes })
-    get().updatePhysics()
+
+    // Recalculate scores after reset
+    setTimeout(() => {
+      get().updatePhysics()
+    }, 100)
   },
+
   setSimulationSpeed: (speed) => {
     set({ simulationSpeed: speed })
   },
@@ -275,38 +331,33 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   // FIXED: Physics-aware position update that doesn't recalculate scores during simulation
   updateBoxPositionPhysics: (id, position) => {
     set((state) => {
-      // Only update position during physics simulation, don't recalculate scores
-      if (state.isSimulationRunning) {
-        const newBoxes = state.boxes.map((box) =>
-          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
-        )
-        return { boxes: newBoxes }
-      } else {
-        // Normal behavior when not in simulation
-        const newBoxes = state.boxes.map((box) =>
-          box.id === id ? { ...box, position: { ...position }, isNew: false } : box
-        )
-        const scores = calculateAllScores(newBoxes, state.truckDimensions)
-        return {
-          boxes: newBoxes,
-          stabilityScore: scores.stability,
-          safetyScore: scores.safety,
-          optimizationScore: scores.optimization,
-        }
-      }
+      const newBoxes = state.boxes.map((box) =>
+        box.id === id ? {
+          ...box,
+          position: { ...position },
+          isNew: false
+        } : box
+      )
+
+      // During simulation, only update positions, don't recalculate scores
+      // The physics engine handles the movement
+      return { boxes: newBoxes }
     })
   },
 
   // FIXED: Modified updateBoxPosition to use physics-aware version
   updateBoxPosition: (id: string, position: { x: number; y: number; z: number }) => {
     const state = get()
+
     if (state.isSimulationRunning) {
-      // Use physics-aware update during simulation
+      // During simulation, use physics-aware update
       get().updateBoxPositionPhysics(id, position)
     } else {
-      // Original behavior when not simulating
+      // When not simulating, update normally and recalculate scores
       set((state) => {
-        const newBoxes = state.boxes.map((box) => (box.id === id ? { ...box, position, isNew: false } : box))
+        const newBoxes = state.boxes.map((box) =>
+          box.id === id ? { ...box, position, isNew: false } : box
+        )
         const scores = calculateAllScores(newBoxes, state.truckDimensions)
 
         return {
@@ -336,38 +387,36 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 
   optimizeLayout: () => {
-    const state = get()
+    const state = get();
     if (state.boxes.length === 0) {
-      console.log('❌ No boxes to optimize')
-      return
+      console.log('❌ No boxes to optimize');
+      return;
     }
 
-    console.log('🚛 Starting layout optimization...', state.boxes.length, 'boxes')
-    const startTime = performance.now()
+    console.log('🚛 Starting layout optimization (void-filling strategy)...', state.boxes.length, 'boxes');
+    const startTime = performance.now();
 
     try {
-      // Create a deep copy of boxes to avoid mutation issues
-      const boxesToOptimize = state.boxes.map(box => ({
+      const boxesToOptimize: PackableBox[] = state.boxes.map(box => ({
         ...box,
-        position: { ...box.position }
-      }))
+        position: { ...box.position },
+        originalId: box.id,
+      }));
 
-      // Use the optimization algorithm
-      const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions)
-      const endTime = performance.now()
+      const optimizedBoxes = optimizeBoxPlacement(boxesToOptimize, state.truckDimensions);
+      const endTime = performance.now();
 
-      console.log('📦 Optimized positions:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
+      console.log('📦 Optimized positions for a sample box:', optimizedBoxes.slice(0, 1).map(b => ({ id: b.originalId, pos: b.position })));
 
-      // IMMEDIATELY update the state with optimized boxes
       set({
         boxes: optimizedBoxes.map(box => ({
           ...box,
-          position: { ...box.position }, // Ensure position is a new object
+          id: box.originalId,
           isNew: false
         }))
-      })
+      });
 
-      console.log(`✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms`)
+      console.log("✅ Layout optimization completed in ${(endTime - startTime).toFixed(2)}ms");
 
       // Recalculate everything after optimization in next tick
       requestAnimationFrame(() => {
@@ -450,7 +499,430 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 }))
 
-// Helper Functions
+/* -------------------------------------------------------------------------- */
+/* HELPER FUNCTIONS FOR BOX ARRANGEMENT (Void-filling Strategy)              */
+/* -------------------------------------------------------------------------- */
+
+// Type for a potential placement, including its dimensions in that orientation
+interface PlacementCandidate {
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  height: number;
+  length: number;
+  rotation: 'xy' | 'xz' | 'yz' | 'yx' | 'zx' | 'zy';
+}
+
+// Function to get all unique orientations for a box
+function getOrientations(box: PackableBox): PlacementCandidate[] {
+  const { width, height, length } = box;
+  const orientations: PlacementCandidate[] = [];
+
+  // Create all 6 permutations, then filter for unique dimensions
+  const dims = [width, height, length].sort((a, b) => a - b); // Sorted dimensions for canonical representation
+
+  // Permutations and rotations
+  orientations.push({ x: 0, y: 0, z: 0, width: width, height: height, length: length, rotation: 'xy' });
+  orientations.push({ x: 0, y: 0, z: 0, width: width, height: length, length: height, rotation: 'xz' });
+  orientations.push({ x: 0, y: 0, z: 0, width: length, height: height, length: width, rotation: 'yz' });
+  // Add other permutations if truly unique for non-cuboid boxes
+  orientations.push({ x: 0, y: 0, z: 0, width: height, height: width, length: length, rotation: 'yx' });
+  orientations.push({ x: 0, y: 0, z: 0, width: height, height: length, length: width, rotation: 'zx' });
+  orientations.push({ x: 0, y: 0, z: 0, width: length, height: width, length: height, rotation: 'zy' });
+
+
+  const uniqueOrientations: PlacementCandidate[] = [];
+  const seenDimensions = new Set<string>();
+
+  for (const o of orientations) {
+    const dimKey = [o.width, o.height, o.length].sort().join(',');
+    if (!seenDimensions.has(dimKey)) {
+      uniqueOrientations.push(o);
+      seenDimensions.add(dimKey);
+    }
+  }
+
+  return uniqueOrientations;
+}
+
+
+// --- Main Optimization Function ---
+function optimizeBoxPlacement(
+  boxes: PackableBox[],
+  truckDimensions: { width: number; length: number; height: number }
+): PackableBox[] {
+  console.log('📦 Optimizing placement for', boxes.length, 'boxes with void-filling strategy.');
+
+  if (boxes.length === 0) return [];
+
+  const placedBoxes: PackableBox[] = [];
+
+  // Initial available space is the entire truck volume
+  let voids: Void[] = [
+    {
+      id: 'truck-initial-void',
+      x: -truckDimensions.width / 2,
+      y: 0,
+      z: -truckDimensions.length / 2,
+      width: truckDimensions.width,
+      height: truckDimensions.height,
+      length: truckDimensions.length,
+      volume: truckDimensions.width * truckDimensions.height * truckDimensions.length,
+    },
+  ];
+
+  // Sort boxes by priority (LIFO destination, then weight for stability)
+  const boxesToPlace = [...boxes].sort((a, b) => {
+    const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
+    const aStopRank = stopOrder[a.destination as keyof typeof stopOrder] ?? 4;
+    const bStopRank = stopOrder[b.destination as keyof typeof stopOrder] ?? 4;
+
+    if (aStopRank !== bStopRank) return aStopRank - bStopRank;
+    return b.weight - a.weight; // Heaviest first
+  });
+
+  boxesToPlace.forEach((box, index) => {
+    console.log(`📍 Attempting to place box ${index + 1}/${boxesToPlace.length}: ${box.id}`);
+
+    let bestPlacement: {
+      box: PackableBox;
+      position: { x: number; y: number; z: number };
+      score: number;
+      voidIndex: number; // Index of the void where it's placed
+    } | null = null;
+
+    const orientations = getOrientations(box);
+
+    // Sort voids by a heuristic (e.g., smallest height, then smallest volume, to fill bottom first)
+    // Or, by proximity to truck rear for LIFO. For now, simple sort.
+    voids.sort((a, b) => a.y - b.y || a.volume - b.volume);
+
+    // Try to place the box in the best void
+    for (let i = 0; i < voids.length; i++) {
+      const currentVoid = voids[i];
+
+      for (const orientation of orientations) {
+        // Calculate the center position of the box within this void's lower-front-left corner
+        const candidateX = currentVoid.x + orientation.width / 2;
+        const candidateY = currentVoid.y + orientation.height / 2;
+        const candidateZ = currentVoid.z + orientation.length / 2;
+
+        const testBox: PackableBox = { ...box, ...orientation, position: { x: candidateX, y: candidateY, z: candidateZ } };
+
+        // Check if the testBox, in this orientation, fits completely inside the current void
+        if (
+          testBox.width <= currentVoid.width &&
+          testBox.height <= currentVoid.height &&
+          testBox.length <= currentVoid.length
+        ) {
+          // Check if this placement within the void is valid within the overall truck space and doesn't collide
+          if (isValidPlacement(testBox, placedBoxes, truckDimensions)) {
+            const score = evaluatePlacement(testBox, placedBoxes, truckDimensions);
+
+            if (!bestPlacement || score > bestPlacement.score) {
+              bestPlacement = { box: testBox, position: testBox.position, score, voidIndex: i };
+            }
+          }
+        }
+      }
+    }
+
+    if (bestPlacement) {
+      const placedBox = bestPlacement.box;
+      placedBox.position = bestPlacement.position; // Update the box's final position
+
+      placedBoxes.push(placedBox); // Add to placed boxes list
+      console.log(`✅ Placed ${placedBox.id} at position:`, placedBox.position, `in void ${voids[bestPlacement.voidIndex].id}, score: ${bestPlacement.score.toFixed(2)}`);
+      // Crucial step: Split the void where the box was placed
+      const originalVoid = voids[bestPlacement.voidIndex];
+      const newVoids = splitVoid(originalVoid, placedBox);
+
+      // Remove the original void and add the new, smaller voids
+      voids.splice(bestPlacement.voidIndex, 1); // Remove original
+      voids.push(...newVoids); // Add newly created voids
+
+      // Clean up voids: remove very small ones, merge overlapping ones (advanced)
+      voids = cleanAndMergeVoids(voids, placedBoxes);
+
+    } else {
+      console.warn(`❌ Could not find a suitable position for box ${box.id}. It might be too large or no suitable void.`);
+      // If a box cannot be placed, it implies the truck is full or the box is unplaceable.
+      // We still add it to the list but with a placeholder position, so it's accounted for.
+      box.position = { x: 9999, y: 9999, z: 9999 };
+      placedBoxes.push(box);
+    }
+  });
+
+  console.log('✅ All boxes processed for placement.');
+  return placedBoxes;
+}
+
+// --- Helper for splitting a void after a box is placed ---
+function splitVoid(originalVoid: Void, placedBox: PackableBox): Void[] {
+  const newVoids: Void[] = [];
+
+  const boxMinX = placedBox.position.x - placedBox.width / 2;
+  const boxMaxX = placedBox.position.x + placedBox.width / 2;
+  const boxMinY = placedBox.position.y - placedBox.height / 2;
+  const boxMaxY = placedBox.position.y + placedBox.height / 2;
+  const boxMinZ = placedBox.position.z - placedBox.length / 2;
+  const boxMaxZ = placedBox.position.z + placedBox.length / 2;
+
+  const voidMinX = originalVoid.x;
+  const voidMaxX = originalVoid.x + originalVoid.width;
+  const voidMinY = originalVoid.y;
+  const voidMaxY = originalVoid.y + originalVoid.height;
+  const voidMinZ = originalVoid.z;
+  const voidMaxZ = originalVoid.z + originalVoid.length;
+
+  let voidCounter = 0; // Simple counter for void IDs
+
+  // Create voids for spaces left in X, Y, Z directions around the placed box
+  // 1. Void to the left of the box
+  if (boxMinX > voidMinX) {
+    newVoids.push({
+      id: `${originalVoid.id}-lx-${voidCounter++}`,
+      x: voidMinX, y: voidMinY, z: voidMinZ,
+      width: boxMinX - voidMinX, height: originalVoid.height, length: originalVoid.length,
+      volume: (boxMinX - voidMinX) * originalVoid.height * originalVoid.length,
+    });
+  }
+  // 2. Void to the right of the box
+  if (boxMaxX < voidMaxX) {
+    newVoids.push({
+      id: `${originalVoid.id}-rx-${voidCounter++}`,
+      x: boxMaxX, y: voidMinY, z: voidMinZ,
+      width: voidMaxX - boxMaxX, height: originalVoid.height, length: originalVoid.length,
+      volume: (voidMaxX - boxMaxX) * originalVoid.height * originalVoid.length,
+    });
+  }
+  // 3. Void below the box (this should ideally not happen if box is placed at bottom)
+  if (boxMinY > voidMinY) {
+    newVoids.push({
+      id: `${originalVoid.id}-rx-${voidCounter++}`,
+      x: voidMinX, y: voidMinY, z: voidMinZ,
+      width: originalVoid.width, height: boxMinY - voidMinY, length: originalVoid.length,
+      volume: originalVoid.width * (boxMinY - voidMinY) * originalVoid.length,
+    });
+  }
+  // 4. Void above the box
+  if (boxMaxY < voidMaxY) {
+    newVoids.push({
+      id: `${originalVoid.id}-rx-${voidCounter++}`,
+      x: voidMinX, y: boxMaxY, z: voidMinZ,
+      width: originalVoid.width, height: voidMaxY - boxMaxY, length: originalVoid.length,
+      volume: originalVoid.width * (voidMaxY - boxMaxY) * originalVoid.length,
+    });
+  }
+  // 5. Void in front of the box (smaller Z)
+  if (boxMinZ > voidMinZ) {
+    newVoids.push({
+      id: `${originalVoid.id}-rx-${voidCounter++}`,
+      x: voidMinX, y: voidMinY, z: voidMinZ,
+      width: originalVoid.width, height: originalVoid.height, length: boxMinZ - voidMinZ,
+      volume: originalVoid.width * originalVoid.height * (boxMinZ - voidMinZ),
+    });
+  }
+  // 6. Void behind the box (larger Z)
+  if (boxMaxZ < voidMaxZ) {
+    newVoids.push({
+      id: `${originalVoid.id}-rx-${voidCounter++}`,
+      x: voidMinX, y: voidMinY, z: boxMaxZ,
+      width: originalVoid.width, height: originalVoid.height, length: voidMaxZ - boxMaxZ,
+      volume: originalVoid.width * originalVoid.height * (voidMaxZ - boxMaxZ),
+    });
+  }
+
+  // Filter out voids with zero or negative dimensions (might happen from float errors or tight fits)
+  return newVoids.filter(v => v.width > 0.01 && v.height > 0.01 && v.length > 0.01);
+}
+
+// --- Simplified void cleaning and merging (critical for performance in real apps) ---
+function cleanAndMergeVoids(voids: Void[], placedBoxes: PackableBox[]): Void[] {
+  // Remove voids that are too small to be useful
+  const minVoidDimension = 0.1; // Minimum size for a void to be considered
+  let cleanedVoids = voids.filter(v => v.width > minVoidDimension && v.height > minVoidDimension && v.length > minVoidDimension);
+
+  // Remove voids that are now completely overlapped by a placed box
+  cleanedVoids = cleanedVoids.filter(v => {
+    // Convert void to a Box-like structure for collision detection
+    const voidAsBox = {
+      position: { x: v.x + v.width / 2, y: v.y + v.height / 2, z: v.z + v.length / 2 },
+      width: v.width,
+      height: v.height,
+      length: v.length,
+      // Dummy properties for Box type compatibility
+      id: v.id, name: '', weight: 0, temperatureZone: 'regular', isFragile: false, destination: ''
+    };
+
+    for (const pBox of placedBoxes) {
+      //@ts-ignore
+      if (isBoxFullyContained(voidAsBox, pBox)) { // Check if the void is fully inside a placed box
+        return false; // This void is now occupied
+      }
+    }
+    return true;
+  });
+
+  // A more advanced algorithm would also merge adjacent or overlapping voids here
+  // to reduce the number of voids and optimize search space. This is a complex step
+  // often involving spatial partitioning (e.g., k-d trees). For this example, we skip merging.
+
+  return cleanedVoids;
+}
+
+// Helper to check if box1 is fully contained within box2
+function isBoxFullyContained(box1: Box, box2: Box): boolean {
+  const box1MinX = box1.position.x - box1.width / 2;
+  const box1MaxX = box1.position.x + box1.width / 2;
+  const box1MinY = box1.position.y - box1.height / 2;
+  const box1MaxY = box1.position.y + box1.height / 2;
+  const box1MinZ = box1.position.z - box1.length / 2;
+  const box1MaxZ = box1.position.z + box1.length / 2;
+
+  const box2MinX = box2.position.x - box2.width / 2;
+  const box2MaxX = box2.position.x + box2.width / 2;
+  const box2MinY = box2.position.y - box2.height / 2;
+  const box2MaxY = box2.position.y + box2.height / 2;
+  const box2MinZ = box2.position.z - box2.length / 2;
+  const box2MaxZ = box2.position.z + box2.length / 2;
+
+  return (
+    box1MinX >= box2MinX && box1MaxX <= box2MaxX &&
+    box1MinY >= box2MinY && box1MaxY <= box2MaxY &&
+    box1MinZ >= box2MinZ && box1MaxZ <= box2MaxZ
+  );
+}
+
+
+// --- Checks if a box can be placed at a given position ---
+function isValidPlacement(
+  testBox: PackableBox,
+  placedBoxes: PackableBox[],
+  truckDimensions: { width: number; length: number; height: number }
+): boolean {
+  // Check truck boundaries
+  if (
+    testBox.position.x - testBox.width / 2 < -truckDimensions.width / 2 ||
+    testBox.position.x + testBox.width / 2 > truckDimensions.width / 2 ||
+    testBox.position.y - testBox.height / 2 < 0 ||
+    testBox.position.y + testBox.height / 2 > truckDimensions.height ||
+    testBox.position.z - testBox.length / 2 < -truckDimensions.length / 2 ||
+    testBox.position.z + testBox.length / 2 > truckDimensions.length / 2
+  ) {
+    return false;
+  }
+
+  // Check collisions with already placed boxes
+  for (const placedBox of placedBoxes) {
+    if (isBoxColliding(testBox, placedBox)) {
+      return false;
+    }
+  }
+
+  // Check for sufficient support from below
+  const isOnFloor = Math.abs(testBox.position.y - testBox.height / 2) < 0.01;
+  if (isOnFloor) {
+    return true;
+  }
+
+  let isSupported = false;
+  const SUPPORT_OVERLAP_THRESHOLD_PERCENT = 0.5; // Needs at least 50% horizontal overlap for support
+
+  for (const placedBox of placedBoxes) {
+    const yOverlap = Math.abs((testBox.position.y - testBox.height / 2) - (placedBox.position.y + placedBox.height / 2));
+    const isSittingOn = yOverlap < 0.01;
+
+    if (isSittingOn) {
+      const xOverlap = Math.max(0, Math.min(testBox.position.x + testBox.width / 2, placedBox.position.x + placedBox.width / 2) - Math.max(testBox.position.x - testBox.width / 2, placedBox.position.x - placedBox.width / 2));
+      const zOverlap = Math.max(0, Math.min(testBox.position.z + testBox.length / 2, placedBox.position.z + placedBox.length / 2) - Math.max(testBox.position.z - testBox.length / 2, placedBox.position.z - placedBox.length / 2));
+
+      if (xOverlap >= (testBox.width * SUPPORT_OVERLAP_THRESHOLD_PERCENT) &&
+        zOverlap >= (testBox.length * SUPPORT_OVERLAP_THRESHOLD_PERCENT)) {
+        isSupported = true;
+        break;
+      }
+    }
+  }
+  return isSupported;
+}
+
+// --- Evaluation Function for a potential placement ---
+function evaluatePlacement(
+  box: PackableBox,
+  placedBoxes: PackableBox[],
+  truckDimensions: { width: number; length: number; height: number }
+): number {
+  let score = 0;
+
+  // 1. Stability (higher score for lower Y and central X/Z)
+  score += (truckDimensions.height - (box.position.y + box.height / 2)) * 5; // Prefer lower
+  score += (truckDimensions.width / 2 - Math.abs(box.position.x)) * 2;      // Prefer center X
+  score += (truckDimensions.length / 2 - Math.abs(box.position.z)) * 2;    // Prefer center Z
+
+  // Prefer placing heavier items at the bottom
+  score += (box.weight / 100) * (truckDimensions.height - (box.position.y + box.height / 2));
+
+  // 2. Temperature Zone Compliance
+  const zoneScore = getTemperatureZoneScore(box, box.position, truckDimensions);
+  score += zoneScore * 100; // High bonus for correct temperature zone
+
+  // 3. Fragile Item Protection
+  if (box.isFragile) {
+    score += (truckDimensions.height - box.position.y) * 10; // Encourage lower placement for fragile items
+  } else {
+    score += box.position.y * 5; // Reward for being higher if not fragile (can be stacked upon)
+  }
+
+  // 4. Accessibility (LIFO - Last In, First Out)
+  const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
+  const targetZRatio = (stopOrder[box.destination as keyof typeof stopOrder] ?? 0) / 3;
+  const actualZRatio = (box.position.z + truckDimensions.length / 2) / truckDimensions.length;
+
+  score -= Math.abs(targetZRatio - actualZRatio) * 50;
+
+  // 5. Void Space Minimization (packing density) - Promote contact
+  let contactScore = 0;
+  const tolerance = 0.05;
+
+  const boxMinX = box.position.x - box.width / 2;
+  const boxMaxX = box.position.x + box.width / 2;
+  const boxMinY = box.position.y - box.height / 2;
+  const boxMaxY = box.position.y + box.height / 2;
+  const boxMinZ = box.position.z - box.length / 2;
+  const boxMaxZ = box.position.z + box.length / 2;
+
+  // Against truck walls
+  if (Math.abs(boxMinX - (-truckDimensions.width / 2)) < tolerance) contactScore += 10;
+  if (Math.abs(boxMaxX - (truckDimensions.width / 2)) < tolerance) contactScore += 10;
+  if (Math.abs(boxMinY - 0) < tolerance) contactScore += 20;
+  if (Math.abs(boxMaxY - truckDimensions.height) < tolerance) contactScore += 5; // Penalty for hitting ceiling? Or just not ideal.
+  if (Math.abs(boxMinZ - (-truckDimensions.length / 2)) < tolerance) contactScore += 10;
+  if (Math.abs(boxMaxZ - (truckDimensions.length / 2)) < tolerance) contactScore += 10;
+
+  // Against other boxes
+  for (const pBox of placedBoxes) {
+    const pBoxMinX = pBox.position.x - pBox.width / 2;
+    const pBoxMaxX = pBox.position.x + pBox.width / 2;
+    const pBoxMinY = pBox.position.y - pBox.height / 2;
+    const pBoxMaxY = pBox.position.y + pBox.height / 2;
+    const pBoxMinZ = pBox.position.z - pBox.length / 2;
+    const pBoxMaxZ = pBox.position.z + pBox.length / 2;
+
+    if (Math.abs(boxMaxX - pBoxMinX) < tolerance || Math.abs(boxMinX - pBoxMaxX) < tolerance) contactScore += 5;
+    if (Math.abs(boxMaxY - pBoxMinY) < tolerance || Math.abs(boxMinY - pBoxMaxY) < tolerance) contactScore += 5;
+    if (Math.abs(boxMaxZ - pBoxMinZ) < tolerance || Math.abs(boxMinZ - pBoxMaxZ) < tolerance) contactScore += 5;
+  }
+  score += contactScore;
+
+  return Math.max(0, score);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                           EXISTING HELPER FUNCTIONS                              */
+/* -------------------------------------------------------------------------- */
 
 function calculateAllScores(boxes: Box[], truckDimensions: { width: number; length: number; height: number }) {
   const stability = calculateStabilityScore(boxes, truckDimensions)
@@ -469,25 +941,21 @@ function calculateStabilityScore(
   let score = 100
   const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
 
-  // Center of Gravity Analysis
   const centerOfGravity = {
     x: boxes.reduce((sum, box) => sum + box.position.x * box.weight, 0) / totalWeight,
     y: boxes.reduce((sum, box) => sum + box.position.y * box.weight, 0) / totalWeight,
     z: boxes.reduce((sum, box) => sum + box.position.z * box.weight, 0) / totalWeight,
   }
 
-  // Penalize high center of gravity
   const maxSafeHeight = truckDimensions.height * 0.6
   if (centerOfGravity.y > maxSafeHeight) {
     const heightPenalty = ((centerOfGravity.y - maxSafeHeight) / maxSafeHeight) * 30
     score -= heightPenalty
   }
 
-  // Lateral stability
   const lateralOffset = Math.abs(centerOfGravity.x) / (truckDimensions.width / 2)
   score -= lateralOffset * 25
 
-  // Longitudinal stability
   const longitudinalOffset = Math.abs(centerOfGravity.z) / (truckDimensions.length / 2)
   score -= longitudinalOffset * 15
 
@@ -502,22 +970,20 @@ function calculateSafetyScore(
 
   let score = 100
 
-  // Weight limit check
   const totalWeight = boxes.reduce((sum, box) => sum + box.weight, 0)
   if (totalWeight > 34000) {
     score -= 25
   }
 
-  // Fragile item safety
   boxes.forEach((box) => {
     if (box.isFragile) {
       if (box.position.y > truckDimensions.height * 0.7) {
         score -= 10
       }
+      // Consider adding checks for heavy boxes directly on top of fragile ones
     }
   })
 
-  // Collision detection
   const collisions = detectCollisions(boxes)
   score -= collisions.length * 0.2
 
@@ -540,6 +1006,16 @@ function calculateOptimizationScore(
   return Math.max(0, Math.min(100, volumeUtilization * 0.6 + weightUtilization * 0.4))
 }
 
+// Bounding Box Collision Detection
+function isBoxColliding(box1: Box | PackableBox, box2: Box | PackableBox): boolean {
+  const xOverlap = Math.max(0, Math.min(box1.position.x + box1.width / 2, box2.position.x + box2.width / 2) - Math.max(box1.position.x - box1.width / 2, box2.position.x - box2.width / 2));
+  const yOverlap = Math.max(0, Math.min(box1.position.y + box1.height / 2, box2.position.y + box2.height / 2) - Math.max(box1.position.y - box1.height / 2, box2.position.y - box2.height / 2));
+  const zOverlap = Math.max(0, Math.min(box1.position.z + box1.length / 2, box2.position.z + box2.length / 2) - Math.max(box1.position.z - box1.length / 2, box2.position.z - box2.length / 2));
+
+  return xOverlap > 0 && yOverlap > 0 && zOverlap > 0;
+}
+
+
 function detectCollisions(boxes: Box[]): Array<{ box1: string; box2: string }> {
   const collisions: Array<{ box1: string; box2: string }> = []
 
@@ -553,43 +1029,52 @@ function detectCollisions(boxes: Box[]): Array<{ box1: string; box2: string }> {
       }
     }
   }
-
   return collisions
-}
-
-function isBoxColliding(box1: Box, box2: Box): boolean {
-  const dx = Math.abs(box1.position.x - box2.position.x)
-  const dy = Math.abs(box1.position.y - box2.position.y)
-  const dz = Math.abs(box1.position.z - box2.position.z)
-
-  const minDistanceX = (box1.width + box2.width) / 2
-  const minDistanceY = (box1.height + box2.height) / 2
-  const minDistanceZ = (box1.length + box2.length) / 2
-
-  return dx < minDistanceX && dy < minDistanceY && dz < minDistanceZ
 }
 
 function calculateContacts(boxes: Box[]): number {
   let contacts = 0
+  const CONTACT_THRESHOLD = 0.05;
+
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
-      const distance = getDistance(boxes[i].position, boxes[j].position)
-      const minDistance = (boxes[i].width + boxes[j].width) / 2
-      if (distance <= minDistance + 0.1) {
-        contacts++
+      const box1 = boxes[i];
+      const box2 = boxes[j];
+
+      const minDx = (box1.width + box2.width) / 2;
+      const minDy = (box1.height + box2.height) / 2;
+      const minDz = (box1.length + box2.length) / 2;
+
+      const actualDx = Math.abs(box1.position.x - box2.position.x);
+      const actualDy = Math.abs(box1.position.y - box2.position.y);
+      const actualDz = Math.abs(box1.position.z - box2.position.z);
+
+      const isTouchingX = Math.abs(actualDx - minDx) < CONTACT_THRESHOLD;
+      const isTouchingY = Math.abs(actualDy - minDy) < CONTACT_THRESHOLD;
+      const isTouchingZ = Math.abs(actualDz - minDz) < CONTACT_THRESHOLD;
+
+      if (
+        (isTouchingX && actualDy < minDy && actualDz < minDz) ||
+        (isTouchingY && actualDx < minDx && actualDz < minDz) ||
+        (isTouchingZ && actualDx < minDx && actualDy < minDy)
+      ) {
+        contacts++;
       }
     }
   }
-  return contacts
+  return contacts;
 }
 
 function calculateTotalForce(boxes: Box[]): number {
   return boxes.reduce((total, box) => {
-    const gravitationalForce = (box.weight * 9.81) / 100
-    const heightFactor = box.position.y / 10
-    return total + gravitationalForce * (1 + heightFactor)
-  }, 0)
+    const mass = box.weight * 0.453592;
+    const gravitationalForce = mass * 9.81;
+
+    const heightFactor = box.position.y / 10;
+    return total + gravitationalForce * (1 + heightFactor);
+  }, 0) / 1000;
 }
+
 
 function getDistance(pos1: { x: number; y: number; z: number }, pos2: { x: number; y: number; z: number }): number {
   const dx = pos1.x - pos2.x
@@ -598,241 +1083,46 @@ function getDistance(pos1: { x: number; y: number; z: number }, pos2: { x: numbe
   return Math.sqrt(dx * dx + dy * dy + dz * dz)
 }
 
-function optimizeBoxPlacement(boxes: Box[], truckDimensions: { width: number; length: number; height: number }): Box[] {
-  console.log('📦 Optimizing placement for', boxes.length, 'boxes')
-
-  if (boxes.length === 0) return []
-
-  // Create deep copies to avoid mutations
-  const optimizedBoxes = boxes.map(box => ({
-    ...box,
-    position: { ...box.position }
-  }))
-
-  // Sort by priority: delivery order, fragility, weight
-  optimizedBoxes.sort((a, b) => {
-    const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 }
-    const aStop = stopOrder[a.destination as keyof typeof stopOrder] ?? 4
-    const bStop = stopOrder[b.destination as keyof typeof stopOrder] ?? 4
-
-    if (aStop !== bStop) return aStop - bStop
-    if (a.isFragile !== b.isFragile) return a.isFragile ? 1 : -1
-    return b.weight - a.weight
-  })
-
-  console.log('📋 Sorted boxes by priority')
-
-  // Clear all positions first
-  optimizedBoxes.forEach(box => {
-    box.position = { x: 0, y: box.height / 2, z: 0 }
-  })
-
-  // Place boxes one by one
-  const placedBoxes: Box[] = []
-
-  optimizedBoxes.forEach((box, index) => {
-    console.log(`📍 Placing box ${index + 1}/${optimizedBoxes.length}: ${box.id}`)
-
-    const bestPosition = findBestPosition(box, placedBoxes, truckDimensions)
-
-    if (bestPosition) {
-      // Create new position object to trigger re-render
-      box.position = {
-        x: Number(bestPosition.x.toFixed(2)),
-        y: Number(bestPosition.y.toFixed(2)),
-        z: Number(bestPosition.z.toFixed(2))
-      }
-      console.log(`✅ Placed ${box.id} at position:`, box.position)
-    } else {
-      // Enhanced fallback: place in a proper grid pattern
-      const gridCols = Math.floor(truckDimensions.width / (box.width + 0.5))
-      const gridRows = Math.floor(truckDimensions.length / (box.length + 0.5))
-
-      const col = index % gridCols
-      const row = Math.floor(index / gridCols) % gridRows
-      const layer = Math.floor(index / (gridCols * gridRows))
-
-      const fallbackX = (col - (gridCols - 1) / 2) * (box.width + 0.5)
-      const fallbackZ = (row - (gridRows - 1) / 2) * (box.length + 0.5)
-      const fallbackY = box.height / 2 + layer * (box.height + 0.2)
-
-      // Ensure within truck bounds
-      box.position = {
-        x: Number(Math.max(-truckDimensions.width / 2 + box.width / 2,
-          Math.min(truckDimensions.width / 2 - box.width / 2, fallbackX)).toFixed(2)),
-        y: Number(Math.min(truckDimensions.height - box.height / 2, fallbackY).toFixed(2)),
-        z: Number(Math.max(-truckDimensions.length / 2 + box.length / 2,
-          Math.min(truckDimensions.length / 2 - box.length / 2, fallbackZ)).toFixed(2))
-      }
-      console.log(`⚠️ Used fallback position for ${box.id}:`, box.position)
-    }
-
-    placedBoxes.push(box)
-  })
-
-  console.log('✅ All boxes placed successfully')
-  console.log('📊 Final positions sample:', optimizedBoxes.slice(0, 3).map(b => ({ id: b.id, pos: b.position })))
-
-  return optimizedBoxes
-}
-
-function findBestPosition(
-  box: Box,
-  placedBoxes: Box[],
-  truckDimensions: { width: number; length: number; height: number },
-): { x: number; y: number; z: number } | null {
-
-  const candidates: Array<{ position: { x: number; y: number; z: number }; score: number }> = []
-
-  // Use adaptive step size based on box count for performance
-  const stepSize = placedBoxes.length > 50 ? 1.0 : 0.5
-  let maxCandidates = 100 // Limit candidates for performance
-
-  // Generate candidate positions more efficiently
-  for (let x = -truckDimensions.width / 2 + box.width / 2;
-    x <= truckDimensions.width / 2 - box.width / 2 && candidates.length < maxCandidates;
-    x += stepSize) {
-    for (let z = -truckDimensions.length / 2 + box.length / 2;
-      z <= truckDimensions.length / 2 - box.length / 2 && candidates.length < maxCandidates;
-      z += stepSize) {
-      for (let y = box.height / 2;
-        y <= truckDimensions.height - box.height / 2 && candidates.length < maxCandidates;
-        y += stepSize) {
-        const position = { x, y, z }
-
-        if (isValidPosition(box, position, placedBoxes, truckDimensions)) {
-          const score = evaluatePosition(box, position, placedBoxes, truckDimensions)
-          candidates.push({ position, score })
-
-          // Early exit for excellent positions
-          if (score > 90) break
-        }
-      }
-    }
-  }
-
-  if (candidates.length === 0) {
-    console.log(`❌ No valid position found for box ${box.id}`)
-    return null
-  }
-
-  // Return the best scoring position
-  candidates.sort((a, b) => b.score - a.score)
-  console.log(`✅ Found ${candidates.length} valid positions for ${box.id}, best score: ${candidates[0].score.toFixed(2)}`)
-  return candidates[0].position
-}
-
-function isValidPosition(
-  box: Box,
-  position: { x: number; y: number; z: number },
-  placedBoxes: Box[],
-  truckDimensions: { width: number; length: number; height: number },
-): boolean {
-  // Check truck boundaries
-  if (
-    position.x - box.width / 2 < -truckDimensions.width / 2 ||
-    position.x + box.width / 2 > truckDimensions.width / 2 ||
-    position.y - box.height / 2 < 0 ||
-    position.y + box.height / 2 > truckDimensions.height ||
-    position.z - box.length / 2 < -truckDimensions.length / 2 ||
-    position.z + box.length / 2 > truckDimensions.length / 2
-  ) {
-    return false
-  }
-
-  // Check collisions with placed boxes
-  const testBox = { ...box, position }
-  for (const placedBox of placedBoxes) {
-    if (isBoxColliding(testBox, placedBox)) {
-      return false
-    }
-  }
-
-  return true
-}
-
-function evaluatePosition(
-  box: Box,
-  position: { x: number; y: number; z: number },
-  placedBoxes: Box[],
-  truckDimensions: { width: number; length: number; height: number },
-): number {
-  let score = 100
-
-  // Prefer lower positions for stability
-  score -= position.y * 3
-
-  // Prefer positions closer to truck center for lateral stability
-  score -= Math.abs(position.x) * 2
-
-  // Temperature zone compliance
-  const zoneScore = getTemperatureZoneScore(box, position, truckDimensions)
-  score += zoneScore * 25
-
-  // Fragile item protection
-  if (box.isFragile) {
-    score -= position.y * 5 // Fragile items prefer lower positions
-    score += (truckDimensions.height - position.y) * 2 // Bonus for being lower
-  }
-
-  // Weight distribution - heavier items prefer bottom
-  const weightFactor = box.weight / 1000 // Normalize weight
-  score += (truckDimensions.height - position.y) * weightFactor
-
-  // Accessibility for loading sequence
-  const accessibilityScore = evaluateAccessibility(box, position, truckDimensions)
-  score += accessibilityScore * 10
-
-  return score
-}
-
-function evaluateAccessibility(
-  box: Box,
-  position: { x: number; y: number; z: number },
-  truckDimensions: { width: number; length: number; height: number }
-): number {
-  // Items that need to be unloaded first should be more accessible
-  const stopOrder = { "Stop 1": 4, "Stop 2": 3, "Stop 3": 2, "Stop 4": 1 }
-  const priority = stopOrder[box.destination as keyof typeof stopOrder] ?? 0
-
-  // Distance from truck opening (assuming rear loading)
-  const distanceFromRear = (truckDimensions.length / 2 + position.z) / truckDimensions.length
-
-  // Higher priority items should be closer to the rear
-  return priority * (1 - distanceFromRear)
-}
-
 function getTemperatureZoneScore(
-  box: Box,
+  box: PackableBox,
   position: { x: number; y: number; z: number },
   truckDimensions: { width: number; length: number; height: number },
 ): number {
-  const zPosition = position.z
+  const truckRearZ = truckDimensions.length / 2;
+  const frozenZoneEnd = truckRearZ; // Back of the truck
+  const coldZoneEnd = truckRearZ - 4; // 4 units from the back
+  const regularZoneEnd = truckRearZ - 8; // 8 units from the back
+
+  const boxCenterZ = position.z;
 
   switch (box.temperatureZone) {
     case "frozen":
-      return zPosition > truckDimensions.length / 2 - 4 ? 1 : 0
+      // Box center must be within the frozen zone (e.g., last 4 units of length)
+      return (boxCenterZ > coldZoneEnd && boxCenterZ <= frozenZoneEnd) ? 1 : 0;
     case "cold":
-      return zPosition > -4 && zPosition <= truckDimensions.length / 2 - 4 ? 1 : 0
+      // Box center must be within the cold zone (e.g., next 4 units)
+      return (boxCenterZ > regularZoneEnd && boxCenterZ <= coldZoneEnd) ? 1 : 0;
     case "regular":
-      return zPosition <= -4 ? 1 : 0
+      // Box center must be within the regular zone (everything before cold zone)
+      return (boxCenterZ <= regularZoneEnd) ? 1 : 0;
     default:
-      return 1
+      return 0.5;
   }
 }
 
 function generateOptimalLoadingSequence(boxes: Box[]): Box[] {
   const sorted = [...boxes].sort((a, b) => {
-    const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 }
-    const aStop = stopOrder[a.destination as keyof typeof stopOrder] || 4
-    const bStop = stopOrder[b.destination as keyof typeof stopOrder] || 4
+    const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
+    const aStop = stopOrder[a.destination as keyof typeof stopOrder] || 4;
+    const bStop = stopOrder[b.destination as keyof typeof stopOrder] || 4;
 
-    if (aStop !== bStop) return aStop - bStop
-    if (a.isFragile !== b.isFragile) return b.isFragile ? 1 : -1
-    return b.weight - a.weight
-  })
+    if (aStop !== bStop) return aStop - bStop;
+    if (a.isFragile && !b.isFragile) return 1;
+    if (!a.isFragile && b.isFragile) return -1;
+    return b.weight - a.weight;
+  });
 
-  return sorted
+  return sorted;
 }
 
 function categorizeTemperatureZones(boxes: Box[]) {
