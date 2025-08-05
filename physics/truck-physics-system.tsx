@@ -119,19 +119,19 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
     if (!isSimulationRunning) return
     const adjustedDelta = delta * simulationSpeed
     const truckForce = new THREE.Vector3()
-    truckForce.y += PHYSICS_CONSTANTS.GRAVITY * (box.weight / 100)
+    truckForce.y += PHYSICS_CONSTANTS.GRAVITY * (box.weight / 10)
     if (globalTruckPhysics.isAccelerating) {
-      truckForce.z += simulationForces.acceleration * (box.weight / 100)
+      truckForce.z += simulationForces.acceleration * (box.weight / 10)
     }
     if (globalTruckPhysics.isBraking) {
-      truckForce.z -= simulationForces.braking * (box.weight / 1000)
+      truckForce.z -= simulationForces.braking * (box.weight / 10)
     }
 
     if (globalTruckPhysics.isTurning) {
       const lateralForce = simulationForces.turning * globalTruckPhysics.turnDirection
-      truckForce.x += lateralForce * (box.weight / 1000)
+      truckForce.x += lateralForce * (box.weight / 100)
 
-      const centrifugalForce = lateralForce * 0.0005
+      const centrifugalForce = lateralForce * 0.005
       truckForce.z += centrifugalForce * Math.sin(state.clock.elapsedTime * 2)
     }
 

@@ -127,6 +127,7 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
   },
 
   loadSampleData: () => {
+    //@ts-ignore
     const optimizedBoxes = optimizeBoxPlacement(sampleBoxes, get().truckDimensions)
     const scores = calculateAllScores(optimizedBoxes, get().truckDimensions)
     const sequence = generateOptimalLoadingSequence(optimizedBoxes)
@@ -255,6 +256,7 @@ export const useOptimizationStore = create<OptimizationState>((set, get) => ({
 
     // Reset to optimized positions
     const state = get()
+    //@ts-ignore
     const optimizedBoxes = optimizeBoxPlacement(state.boxes, state.truckDimensions)
 
     set({ boxes: optimizedBoxes })
@@ -572,51 +574,59 @@ function optimizeBoxPlacement(
     },
   ];
 
-  // Sort boxes by priority (LIFO destination, then weight for stability)
+  // Sort boxes by priority: LIFO destination first, then HEAVIEST first for stability
   const boxesToPlace = [...boxes].sort((a, b) => {
     const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
     const aStopRank = stopOrder[a.destination as keyof typeof stopOrder] ?? 4;
     const bStopRank = stopOrder[b.destination as keyof typeof stopOrder] ?? 4;
 
     if (aStopRank !== bStopRank) return aStopRank - bStopRank;
-    return b.weight - a.weight; // Heaviest first
+    return b.weight - a.weight; // HEAVIEST FIRST for better stability
   });
 
   boxesToPlace.forEach((box, index) => {
-    console.log(`📍 Attempting to place box ${index + 1}/${boxesToPlace.length}: ${box.id}`);
+    console.log(`📍 Attempting to place box ${index + 1}/${boxesToPlace.length}: ${box.id} (${box.weight}kg)`);
 
     let bestPlacement: {
       box: PackableBox;
       position: { x: number; y: number; z: number };
       score: number;
-      voidIndex: number; // Index of the void where it's placed
+      voidIndex: number;
     } | null = null;
 
     const orientations = getOrientations(box);
 
-    // Sort voids by a heuristic (e.g., smallest height, then smallest volume, to fill bottom first)
-    // Or, by proximity to truck rear for LIFO. For now, simple sort.
-    voids.sort((a, b) => a.y - b.y || a.volume - b.volume);
+    // Sort voids by placement priority: lowest Y first, then smallest volume, then closest to truck rear
+    voids.sort((a, b) => {
+      if (Math.abs(a.y - b.y) > 0.01) return a.y - b.y; // Lower first
+      if (Math.abs(a.volume - b.volume) > 0.01) return a.volume - b.volume; // Smaller voids first
+      return b.z - a.z; // Closer to rear (higher Z) first for LIFO
+    });
 
     // Try to place the box in the best void
     for (let i = 0; i < voids.length; i++) {
       const currentVoid = voids[i];
 
       for (const orientation of orientations) {
-        // Calculate the center position of the box within this void's lower-front-left corner
+        // Position box at the BOTTOM-LEFT-REAR of the void for tight packing
         const candidateX = currentVoid.x + orientation.width / 2;
         const candidateY = currentVoid.y + orientation.height / 2;
         const candidateZ = currentVoid.z + orientation.length / 2;
 
-        const testBox: PackableBox = { ...box, ...orientation, position: { x: candidateX, y: candidateY, z: candidateZ } };
+        const testBox: PackableBox = {
+          ...box,
+          ...orientation,
+          position: { x: candidateX, y: candidateY, z: candidateZ },
+          rotation: orientation.rotation
+        };
 
-        // Check if the testBox, in this orientation, fits completely inside the current void
+        // Check if the testBox fits completely inside the current void
         if (
-          testBox.width <= currentVoid.width &&
-          testBox.height <= currentVoid.height &&
-          testBox.length <= currentVoid.length
+          testBox.width <= currentVoid.width + 0.001 && // Small tolerance for floating point
+          testBox.height <= currentVoid.height + 0.001 &&
+          testBox.length <= currentVoid.length + 0.001
         ) {
-          // Check if this placement within the void is valid within the overall truck space and doesn't collide
+          // Check if this placement is valid within truck and doesn't collide
           if (isValidPlacement(testBox, placedBoxes, truckDimensions)) {
             const score = evaluatePlacement(testBox, placedBoxes, truckDimensions);
 
@@ -630,25 +640,25 @@ function optimizeBoxPlacement(
 
     if (bestPlacement) {
       const placedBox = bestPlacement.box;
-      placedBox.position = bestPlacement.position; // Update the box's final position
+      placedBox.position = bestPlacement.position;
 
-      placedBoxes.push(placedBox); // Add to placed boxes list
-      console.log(`✅ Placed ${placedBox.id} at position:`, placedBox.position, `in void ${voids[bestPlacement.voidIndex].id}, score: ${bestPlacement.score.toFixed(2)}`);
-      // Crucial step: Split the void where the box was placed
+      placedBoxes.push(placedBox);
+      console.log(`✅ Placed ${placedBox.id} at position:`, placedBox.position, `score: ${bestPlacement.score.toFixed(2)}`);
+
+      // Split the void where the box was placed
       const originalVoid = voids[bestPlacement.voidIndex];
-      const newVoids = splitVoid(originalVoid, placedBox);
+      const newVoids = splitVoidTightly(originalVoid, placedBox);
 
       // Remove the original void and add the new, smaller voids
-      voids.splice(bestPlacement.voidIndex, 1); // Remove original
-      voids.push(...newVoids); // Add newly created voids
+      voids.splice(bestPlacement.voidIndex, 1);
+      voids.push(...newVoids);
 
-      // Clean up voids: remove very small ones, merge overlapping ones (advanced)
+      // Clean up voids
       voids = cleanAndMergeVoids(voids, placedBoxes);
 
     } else {
-      console.warn(`❌ Could not find a suitable position for box ${box.id}. It might be too large or no suitable void.`);
-      // If a box cannot be placed, it implies the truck is full or the box is unplaceable.
-      // We still add it to the list but with a placeholder position, so it's accounted for.
+      console.warn(`❌ Could not find a suitable position for box ${box.id}`);
+      // Place unplaceable boxes far away
       box.position = { x: 9999, y: 9999, z: 9999 };
       placedBoxes.push(box);
     }
@@ -737,39 +747,158 @@ function splitVoid(originalVoid: Void, placedBox: PackableBox): Void[] {
   // Filter out voids with zero or negative dimensions (might happen from float errors or tight fits)
   return newVoids.filter(v => v.width > 0.01 && v.height > 0.01 && v.length > 0.01);
 }
+function splitVoidTightly(originalVoid: Void, placedBox: PackableBox): Void[] {
+  const newVoids: Void[] = [];
 
+  const boxMinX = placedBox.position.x - placedBox.width / 2;
+  const boxMaxX = placedBox.position.x + placedBox.width / 2;
+  const boxMinY = placedBox.position.y - placedBox.height / 2;
+  const boxMaxY = placedBox.position.y + placedBox.height / 2;
+  const boxMinZ = placedBox.position.z - placedBox.length / 2;
+  const boxMaxZ = placedBox.position.z + placedBox.length / 2;
+
+  const voidMinX = originalVoid.x;
+  const voidMaxX = originalVoid.x + originalVoid.width;
+  const voidMinY = originalVoid.y;
+  const voidMaxY = originalVoid.y + originalVoid.height;
+  const voidMinZ = originalVoid.z;
+  const voidMaxZ = originalVoid.z + originalVoid.length;
+
+  let voidCounter = 0;
+
+  // Create tighter voids that start immediately adjacent to the placed box
+
+  // 1. Void to the LEFT of the box (X- direction)
+  if (boxMinX > voidMinX) {
+    const width = boxMinX - voidMinX;
+    if (width > 0.01) {
+      newVoids.push({
+        id: `${originalVoid.id}-left-${voidCounter++}`,
+        x: voidMinX,
+        y: voidMinY,
+        z: voidMinZ,
+        width: width,
+        height: originalVoid.height,
+        length: originalVoid.length,
+        volume: width * originalVoid.height * originalVoid.length,
+      });
+    }
+  }
+
+  // 2. Void to the RIGHT of the box (X+ direction)  
+  if (boxMaxX < voidMaxX) {
+    const width = voidMaxX - boxMaxX;
+    if (width > 0.001) {
+      newVoids.push({
+        id: `${originalVoid.id}-right-${voidCounter++}`,
+        x: boxMaxX, // Start immediately after the box
+        y: voidMinY,
+        z: voidMinZ,
+        width: width,
+        height: originalVoid.height,
+        length: originalVoid.length,
+        volume: width * originalVoid.height * originalVoid.length,
+      });
+    }
+  }
+
+  // 3. Void ABOVE the box (Y+ direction) - constrained to box's X/Z footprint
+  if (boxMaxY < voidMaxY) {
+    const height = voidMaxY - boxMaxY;
+    if (height > 0.01) {
+      newVoids.push({
+        id: `${originalVoid.id}-above-${voidCounter++}`,
+        x: Math.max(voidMinX, boxMinX), // Constrain to box footprint
+        y: boxMaxY, // Start immediately above the box
+        z: Math.max(voidMinZ, boxMinZ), // Constrain to box footprint
+        width: Math.min(voidMaxX, boxMaxX) - Math.max(voidMinX, boxMinX),
+        height: height,
+        length: Math.min(voidMaxZ, boxMaxZ) - Math.max(voidMinZ, boxMinZ),
+        volume: 0, // Will be calculated below
+      });
+      // Calculate volume for the constrained void
+      const lastVoid = newVoids[newVoids.length - 1];
+      lastVoid.volume = lastVoid.width * lastVoid.height * lastVoid.length;
+    }
+  }
+
+  // 4. Void in FRONT of the box (Z- direction)
+  if (boxMinZ > voidMinZ) {
+    const length = boxMinZ - voidMinZ;
+    if (length > 0.01) {
+      newVoids.push({
+        id: `${originalVoid.id}-front-${voidCounter++}`,
+        x: voidMinX,
+        y: voidMinY,
+        z: voidMinZ,
+        width: originalVoid.width,
+        height: originalVoid.height,
+        length: length,
+        volume: originalVoid.width * originalVoid.height * length,
+      });
+    }
+  }
+
+  // 5. Void BEHIND the box (Z+ direction)
+  if (boxMaxZ < voidMaxZ) {
+    const length = voidMaxZ - boxMaxZ;
+    if (length > 0.01) {
+      newVoids.push({
+        id: `${originalVoid.id}-behind-${voidCounter++}`,
+        x: voidMinX,
+        y: voidMinY,
+        z: boxMaxZ, // Start immediately behind the box
+        width: originalVoid.width,
+        height: originalVoid.height,
+        length: length,
+        volume: originalVoid.width * originalVoid.height * length,
+      });
+    }
+  }
+
+  // Filter out invalid voids
+  return newVoids.filter(v => v.width > 0.01 && v.height > 0.01 && v.length > 0.01 && v.volume > 0.001);
+}
 // --- Simplified void cleaning and merging (critical for performance in real apps) ---
 function cleanAndMergeVoids(voids: Void[], placedBoxes: PackableBox[]): Void[] {
-  // Remove voids that are too small to be useful
-  const minVoidDimension = 0.1; // Minimum size for a void to be considered
-  let cleanedVoids = voids.filter(v => v.width > minVoidDimension && v.height > minVoidDimension && v.length > minVoidDimension);
+  const minVoidDimension = 0.05; // Minimum useful void size
 
-  // Remove voids that are now completely overlapped by a placed box
+  // Remove voids that are too small
+  let cleanedVoids = voids.filter(v =>
+    v.width > minVoidDimension &&
+    v.height > minVoidDimension &&
+    v.length > minVoidDimension &&
+    v.volume > minVoidDimension * minVoidDimension * minVoidDimension
+  );
+
+  // Remove voids that are blocked by placed boxes
   cleanedVoids = cleanedVoids.filter(v => {
-    // Convert void to a Box-like structure for collision detection
-    const voidAsBox = {
-      position: { x: v.x + v.width / 2, y: v.y + v.height / 2, z: v.z + v.length / 2 },
-      width: v.width,
-      height: v.height,
-      length: v.length,
-      // Dummy properties for Box type compatibility
-      id: v.id, name: '', weight: 0, temperatureZone: 'regular', isFragile: false, destination: ''
-    };
+    const voidCenter = { x: v.x + v.width / 2, y: v.y + v.height / 2, z: v.z + v.length / 2 };
 
     for (const pBox of placedBoxes) {
-      //@ts-ignore
-      if (isBoxFullyContained(voidAsBox, pBox)) { // Check if the void is fully inside a placed box
-        return false; // This void is now occupied
+      // Check if the void center is inside any placed box
+      if (
+        voidCenter.x >= pBox.position.x - pBox.width / 2 &&
+        voidCenter.x <= pBox.position.x + pBox.width / 2 &&
+        voidCenter.y >= pBox.position.y - pBox.height / 2 &&
+        voidCenter.y <= pBox.position.y + pBox.height / 2 &&
+        voidCenter.z >= pBox.position.z - pBox.length / 2 &&
+        voidCenter.z <= pBox.position.z + pBox.length / 2
+      ) {
+        return false; // Void is blocked
       }
     }
     return true;
   });
 
-  // A more advanced algorithm would also merge adjacent or overlapping voids here
-  // to reduce the number of voids and optimize search space. This is a complex step
-  // often involving spatial partitioning (e.g., k-d trees). For this example, we skip merging.
+  // Sort by priority for placement: lower Y first, then smaller volume
+  cleanedVoids.sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 0.01) return a.y - b.y;
+    return a.volume - b.volume;
+  });
 
-  return cleanedVoids;
+  // Limit number of voids to prevent performance issues
+  return cleanedVoids.slice(0, 50);
 }
 
 // Helper to check if box1 is fully contained within box2
@@ -802,53 +931,71 @@ function isValidPlacement(
   placedBoxes: PackableBox[],
   truckDimensions: { width: number; length: number; height: number }
 ): boolean {
-  // Check truck boundaries
+  // Check truck boundaries with small tolerance
+  const tolerance = 0.005;
   if (
-    testBox.position.x - testBox.width / 2 < -truckDimensions.width / 2 ||
-    testBox.position.x + testBox.width / 2 > truckDimensions.width / 2 ||
-    testBox.position.y - testBox.height / 2 < 0 ||
-    testBox.position.y + testBox.height / 2 > truckDimensions.height ||
-    testBox.position.z - testBox.length / 2 < -truckDimensions.length / 2 ||
-    testBox.position.z + testBox.length / 2 > truckDimensions.length / 2
+    testBox.position.x - testBox.width / 2 < -truckDimensions.width / 2 - tolerance ||
+    testBox.position.x + testBox.width / 2 > truckDimensions.width / 2 + tolerance ||
+    testBox.position.y - testBox.height / 2 < -tolerance ||
+    testBox.position.y + testBox.height / 2 > truckDimensions.height + tolerance ||
+    testBox.position.z - testBox.length / 2 < -truckDimensions.length / 2 - tolerance ||
+    testBox.position.z + testBox.length / 2 > truckDimensions.length / 2 + tolerance
   ) {
     return false;
   }
 
-  // Check collisions with already placed boxes
+  // Check collisions with placed boxes
   for (const placedBox of placedBoxes) {
     if (isBoxColliding(testBox, placedBox)) {
       return false;
     }
   }
 
-  // Check for sufficient support from below
+  // Enhanced support checking
   const isOnFloor = Math.abs(testBox.position.y - testBox.height / 2) < 0.01;
   if (isOnFloor) {
     return true;
   }
 
-  let isSupported = false;
-  const SUPPORT_OVERLAP_THRESHOLD_PERCENT = 0.5; // Needs at least 50% horizontal overlap for support
+  // Check for adequate support from boxes below
+  const SUPPORT_OVERLAP_THRESHOLD = 0.2; // Need 70% overlap for good support
+  let totalSupportArea = 0;
+  const testBoxArea = testBox.width * testBox.length;
 
   for (const placedBox of placedBoxes) {
-    const yOverlap = Math.abs((testBox.position.y - testBox.height / 2) - (placedBox.position.y + placedBox.height / 2));
-    const isSittingOn = yOverlap < 0.01;
+    const verticalGap = Math.abs((testBox.position.y - testBox.height / 2) - (placedBox.position.y + placedBox.height / 2));
+    const isSupportingFromBelow = verticalGap < 0.01;
 
-    if (isSittingOn) {
-      const xOverlap = Math.max(0, Math.min(testBox.position.x + testBox.width / 2, placedBox.position.x + placedBox.width / 2) - Math.max(testBox.position.x - testBox.width / 2, placedBox.position.x - placedBox.width / 2));
-      const zOverlap = Math.max(0, Math.min(testBox.position.z + testBox.length / 2, placedBox.position.z + placedBox.length / 2) - Math.max(testBox.position.z - testBox.length / 2, placedBox.position.z - placedBox.length / 2));
+    if (isSupportingFromBelow) {
+      // Calculate horizontal overlap area
+      const xOverlap = Math.max(0,
+        Math.min(testBox.position.x + testBox.width / 2, placedBox.position.x + placedBox.width / 2) -
+        Math.max(testBox.position.x - testBox.width / 2, placedBox.position.x - placedBox.width / 2)
+      );
+      const zOverlap = Math.max(0,
+        Math.min(testBox.position.z + testBox.length / 2, placedBox.position.z + placedBox.length / 2) -
+        Math.max(testBox.position.z - testBox.length / 2, placedBox.position.z - placedBox.length / 2)
+      );
 
-      if (xOverlap >= (testBox.width * SUPPORT_OVERLAP_THRESHOLD_PERCENT) &&
-        zOverlap >= (testBox.length * SUPPORT_OVERLAP_THRESHOLD_PERCENT)) {
-        isSupported = true;
-        break;
-      }
+      totalSupportArea += xOverlap * zOverlap;
     }
   }
-  return isSupported;
+
+  const supportRatio = totalSupportArea / testBoxArea;
+  return supportRatio >= SUPPORT_OVERLAP_THRESHOLD;
 }
 
-// --- Evaluation Function for a potential placement ---
+function calculateHorizontalOverlap(box1: PackableBox, box2: PackableBox): number {
+  const xOverlap = Math.max(0, Math.min(box1.position.x + box1.width / 2, box2.position.x + box2.width / 2) -
+    Math.max(box1.position.x - box1.width / 2, box2.position.x - box2.width / 2));
+  const zOverlap = Math.max(0, Math.min(box1.position.z + box1.length / 2, box2.position.z + box2.length / 2) -
+    Math.max(box1.position.z - box1.length / 2, box2.position.z - box2.length / 2));
+
+  const box1Area = box1.width * box1.length;
+  const overlapArea = xOverlap * zOverlap;
+
+  return box1Area > 0 ? overlapArea / box1Area : 0;
+}
 function evaluatePlacement(
   box: PackableBox,
   placedBoxes: PackableBox[],
@@ -856,35 +1003,21 @@ function evaluatePlacement(
 ): number {
   let score = 0;
 
-  // 1. Stability (higher score for lower Y and central X/Z)
-  score += (truckDimensions.height - (box.position.y + box.height / 2)) * 5; // Prefer lower
-  score += (truckDimensions.width / 2 - Math.abs(box.position.x)) * 2;      // Prefer center X
-  score += (truckDimensions.length / 2 - Math.abs(box.position.z)) * 2;    // Prefer center Z
+  // 1. STABILITY - Much higher weight for lower placement and heavier boxes at bottom
+  const heightPenalty = (box.position.y / truckDimensions.height) * 100;
+  score -= heightPenalty;
 
-  // Prefer placing heavier items at the bottom
-  score += (box.weight / 100) * (truckDimensions.height - (box.position.y + box.height / 2));
+  // Heavy boxes get huge bonus for being low
+  const weightStabilityBonus = (box.weight / 100) * (truckDimensions.height - box.position.y) * 2;
+  score += weightStabilityBonus;
 
-  // 2. Temperature Zone Compliance
-  const zoneScore = getTemperatureZoneScore(box, box.position, truckDimensions);
-  score += zoneScore * 100; // High bonus for correct temperature zone
+  // Center of mass preference
+  score += (truckDimensions.width / 2 - Math.abs(box.position.x)) * 3;
+  score += (truckDimensions.length / 2 - Math.abs(box.position.z)) * 2;
 
-  // 3. Fragile Item Protection
-  if (box.isFragile) {
-    score += (truckDimensions.height - box.position.y) * 10; // Encourage lower placement for fragile items
-  } else {
-    score += box.position.y * 5; // Reward for being higher if not fragile (can be stacked upon)
-  }
-
-  // 4. Accessibility (LIFO - Last In, First Out)
-  const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
-  const targetZRatio = (stopOrder[box.destination as keyof typeof stopOrder] ?? 0) / 3;
-  const actualZRatio = (box.position.z + truckDimensions.length / 2) / truckDimensions.length;
-
-  score -= Math.abs(targetZRatio - actualZRatio) * 50;
-
-  // 5. Void Space Minimization (packing density) - Promote contact
+  // 2. TIGHT PACKING - Massive bonus for contact with other boxes or walls
   let contactScore = 0;
-  const tolerance = 0.05;
+  const tolerance = 0.00002; // Tighter tolerance for contact detection
 
   const boxMinX = box.position.x - box.width / 2;
   const boxMaxX = box.position.x + box.width / 2;
@@ -893,15 +1026,14 @@ function evaluatePlacement(
   const boxMinZ = box.position.z - box.length / 2;
   const boxMaxZ = box.position.z + box.length / 2;
 
-  // Against truck walls
-  if (Math.abs(boxMinX - (-truckDimensions.width / 2)) < tolerance) contactScore += 10;
-  if (Math.abs(boxMaxX - (truckDimensions.width / 2)) < tolerance) contactScore += 10;
-  if (Math.abs(boxMinY - 0) < tolerance) contactScore += 20;
-  if (Math.abs(boxMaxY - truckDimensions.height) < tolerance) contactScore += 5; // Penalty for hitting ceiling? Or just not ideal.
-  if (Math.abs(boxMinZ - (-truckDimensions.length / 2)) < tolerance) contactScore += 10;
-  if (Math.abs(boxMaxZ - (truckDimensions.length / 2)) < tolerance) contactScore += 10;
+  // Contact with truck walls (high bonus)
+  if (Math.abs(boxMinX - (-truckDimensions.width / 2)) < tolerance) contactScore += 50;
+  if (Math.abs(boxMaxX - (truckDimensions.width / 2)) < tolerance) contactScore += 50;
+  if (Math.abs(boxMinY - 0) < tolerance) contactScore += 100; // Floor contact is critical
+  if (Math.abs(boxMinZ - (-truckDimensions.length / 2)) < tolerance) contactScore += 30;
+  if (Math.abs(boxMaxZ - (truckDimensions.length / 2)) < tolerance) contactScore += 30;
 
-  // Against other boxes
+  // Contact with other boxes (very high bonus for tight packing)
   for (const pBox of placedBoxes) {
     const pBoxMinX = pBox.position.x - pBox.width / 2;
     const pBoxMaxX = pBox.position.x + pBox.width / 2;
@@ -910,11 +1042,61 @@ function evaluatePlacement(
     const pBoxMinZ = pBox.position.z - pBox.length / 2;
     const pBoxMaxZ = pBox.position.z + pBox.length / 2;
 
-    if (Math.abs(boxMaxX - pBoxMinX) < tolerance || Math.abs(boxMinX - pBoxMaxX) < tolerance) contactScore += 5;
-    if (Math.abs(boxMaxY - pBoxMinY) < tolerance || Math.abs(boxMinY - pBoxMaxY) < tolerance) contactScore += 5;
-    if (Math.abs(boxMaxZ - pBoxMinZ) < tolerance || Math.abs(boxMinZ - pBoxMaxZ) < tolerance) contactScore += 5;
+    // Check for face-to-face contact (no gaps)
+    if (Math.abs(boxMaxX - pBoxMinX) < tolerance) contactScore += 200; // Increase from 80
+    if (Math.abs(boxMinX - pBoxMaxX) < tolerance) contactScore += 200; // Left face touching right face
+    if (Math.abs(boxMaxY - pBoxMinY) < tolerance) contactScore += 120; // Top touching bottom (stacking)
+    if (Math.abs(boxMinY - pBoxMaxY) < tolerance) contactScore += 60; // Bottom touching top
+    if (Math.abs(boxMaxZ - pBoxMinZ) < tolerance) contactScore += 80; // Back touching front
+    if (Math.abs(boxMinZ - pBoxMaxZ) < tolerance) contactScore += 80; // Front touching back
   }
   score += contactScore;
+
+  // 3. Temperature Zone Compliance
+  const zoneScore = getTemperatureZoneScore(box, box.position, truckDimensions);
+  score += zoneScore * 200; // Higher bonus for correct temperature zone
+
+  // 4. Fragile Item Protection
+  if (box.isFragile) {
+    score += (truckDimensions.height - box.position.y) * 20; // Lower placement for fragile
+    // Penalty if heavy boxes are above fragile boxes
+    for (const pBox of placedBoxes) {
+      if (pBox.weight > box.weight * 1.5 && pBox.position.y > box.position.y) {
+        const overlap = calculateHorizontalOverlap(box, pBox);
+        if (overlap > 0.3) { // 30% overlap threshold
+          score -= overlap * 100; // Penalty for heavy items above fragile
+        }
+      }
+    }
+  }
+
+  // 5. LIFO Accessibility
+  const stopOrder = { "Stop 4": 0, "Stop 3": 1, "Stop 2": 2, "Stop 1": 3 };
+  const targetZRatio = (stopOrder[box.destination as keyof typeof stopOrder] ?? 0) / 3;
+  const actualZRatio = (box.position.z + truckDimensions.length / 2) / truckDimensions.length;
+  score -= Math.abs(targetZRatio - actualZRatio) * 150;
+
+  // 6. CORNER AND EDGE PREFERENCE - Prioritize corners and edges for structural support
+  let structuralBonus = 0;
+
+  // Corner bonuses (box touching two walls)
+  const touchingLeftWall = Math.abs(boxMinX - (-truckDimensions.width / 2)) < tolerance;
+  const touchingRightWall = Math.abs(boxMaxX - (truckDimensions.width / 2)) < tolerance;
+  const touchingFrontWall = Math.abs(boxMinZ - (-truckDimensions.length / 2)) < tolerance;
+  const touchingBackWall = Math.abs(boxMaxZ - (truckDimensions.length / 2)) < tolerance;
+  const touchingFloor = Math.abs(boxMinY - 0) < tolerance;
+
+  const wallContacts = [touchingLeftWall, touchingRightWall, touchingFrontWall, touchingBackWall].filter(Boolean).length;
+
+  if (touchingFloor && wallContacts >= 2) {
+    structuralBonus += 200; // Corner placement bonus
+  } else if (touchingFloor && wallContacts >= 1) {
+    structuralBonus += 100; // Edge placement bonus
+  } else if (touchingFloor) {
+    structuralBonus += 50; // Floor contact bonus
+  }
+
+  score += structuralBonus;
 
   return Math.max(0, score);
 }
