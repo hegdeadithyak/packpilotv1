@@ -11,7 +11,6 @@ import { PhysicsDebugger } from "@/components/3d/physics-debugger"
 import { TwoDRenderer } from "@/components/2d/two-d-renderer"
 import { useOptimizationStore } from "@/store/optimization-store"
 import { useFrame } from "@react-three/fiber"
-import { RouteStopsManager } from '@/utils/stop-manager'
 import {
   PhysicsSimulationController,
   EnhancedBoxRenderer,
@@ -212,6 +211,143 @@ let globalSelectCallbacks: Set<(box: SelectedBoxInfo | null) => void> = new Set(
 // Import HDRI environment
 import { suspend } from 'suspend-react'
 const bridge = import('@pmndrs/assets/hdri/warehouse.exr')
+
+// Add these functions to your truck-visualization.tsx file
+// Place them after the useRouteStore definition (around line 110)
+
+// Initialize route store with delivery stops
+export function initializeRouteStore(routes: any[]): boolean {
+  try {
+    if (!routes || routes.length === 0) {
+      console.warn('No routes provided for initialization');
+      return false;
+    }
+
+    const { deliveryStops, addDeliveryStop } = useRouteStore.getState();
+    
+    // Clear existing stops first
+    useRouteStore.setState({ deliveryStops: [] });
+    
+    // Add each route as a delivery stop
+    routes.forEach((route, index) => {
+      const warehouse: Warehouse = {
+        id: index + 1,
+        name: route.name,
+        address: route.address,
+        coordinates: route.coordinates,
+        capacity: route.estimatedBoxes * 100, // Estimate capacity
+        orderWarehouses: [],
+        deliveryRoutes: []
+      };
+      
+      // Create the delivery stop
+      const deliveryStop: DeliveryStop = {
+        id: route.id,
+        warehouseId: warehouse.id,
+        warehouse,
+        order: route.priority,
+        estimatedArrival: new Date(Date.now() + route.priority * 60 * 60 * 1000).toISOString(),
+        isCompleted: false,
+        name: `Stop ${route.priority}` // Use simple format
+      };
+      
+      // Add to store
+      useRouteStore.setState(state => ({
+        deliveryStops: [...state.deliveryStops, deliveryStop]
+      }));
+    });
+    
+    console.log('✅ Route store initialized with', routes.length, 'stops');
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize route store:', error);
+    return false;
+  }
+}
+
+// Check if route store is ready and has stops
+export function isRouteStoreReady(): boolean {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    return Array.isArray(deliveryStops) && deliveryStops.length > 0;
+  } catch (error) {
+    console.error('Error checking route store readiness:', error);
+    return false;
+  }
+}
+
+// Additional helper function to get available destinations safely
+export function getAvailableDestinations(): string[] {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    if (!deliveryStops || deliveryStops.length === 0) {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]; // Default fallback
+    }
+    return deliveryStops.map(stop => stop.name);
+  } catch (error) {
+    console.warn('Error getting destinations from route store:', error);
+    return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]; // Default fallback
+  }
+}
+
+// Initialize route store with default stops if empty
+export function ensureRouteStoreHasDefaults(): void {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    
+    if (deliveryStops.length === 0) {
+      console.log('🔄 Initializing route store with default stops');
+      
+      const defaultWarehouses: Warehouse[] = [
+        {
+          id: 1,
+          name: "Distribution Center",
+          address: "123 Main St, Dallas, TX",
+          coordinates: { lat: 32.7767, lng: -96.7970 },
+          capacity: 10000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 2,
+          name: "Store #4532",
+          address: "456 Oak Ave, Dallas, TX",
+          coordinates: { lat: 32.7867, lng: -96.7870 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 3,
+          name: "Store #2901",
+          address: "789 Pine St, Dallas, TX",
+          coordinates: { lat: 32.7967, lng: -96.7770 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 4,
+          name: "Store #7834",
+          address: "321 Elm Dr, Dallas, TX",
+          coordinates: { lat: 32.8067, lng: -96.7670 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        }
+      ];
+
+      // Add default stops
+      defaultWarehouses.forEach(warehouse => {
+        useRouteStore.getState().addDeliveryStop(warehouse);
+      });
+      
+      console.log('✅ Default route stops added');
+    }
+  } catch (error) {
+    console.error('Error ensuring route store defaults:', error);
+  }
+}
 
 // Enhanced Orders Panel Component with Warehouse Stop Management and Route Sync
 function OrdersPanel() {
@@ -1516,7 +1652,7 @@ function Scene() {
       <PerspectiveCamera makeDefault position={[20, 15, 20]} fov={50} near={0.1} far={1000} />
 
       <CameraController />
-      
+    
       <Environment files={suspend(bridge).default} />
       <ambientLight intensity={0.3} />
       <directionalLight

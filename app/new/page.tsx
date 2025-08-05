@@ -47,7 +47,6 @@ export default function NewWorkspacePage() {
     initializePhysics,
     runSimulation,
     stopSimulation,
-    clearAllBoxes,
   } = useOptimizationStore();
 
   const { createWorkspace, loadWorkspace, currentWorkspace, saveWorkspace } = useWorkspaceStore();
@@ -59,9 +58,6 @@ export default function NewWorkspacePage() {
         // Create and load empty workspace
         const workspace = createWorkspace("New Empty Workspace", "empty");
         loadWorkspace(workspace.id);
-        
-        // Clear any existing boxes to ensure empty state
-        clearAllBoxes();
         
         // Initialize physics
         initializePhysics();
@@ -77,7 +73,7 @@ export default function NewWorkspacePage() {
     };
 
     initializeEmpty();
-  }, [createWorkspace, loadWorkspace, clearAllBoxes, initializePhysics]);
+  }, [createWorkspace, loadWorkspace, initializePhysics]);
 
   // ───────────────────────── derived metrics ─────────────────────────
   const totalWeight = boxes.reduce((s, b) => s + b.weight, 0);

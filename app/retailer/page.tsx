@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +10,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { Minus, Plus, ShoppingCart, LogOut, Send, Package, AlertTriangle, Bell, X, Calculator, TrendingUp, DollarSign, Clock, Truck } from "lucide-react"
+import { 
+  Minus, Plus, ShoppingCart, LogOut, Send, Package, AlertTriangle, Bell, X, 
+  Calculator, TrendingUp, DollarSign, Truck, Building2, BarChart3, Search, 
+  Filter, Eye, Settings, Zap, Target, ShoppingBag, Clock, Star, ChevronRight,
+  Grid3X3, List, RefreshCw, Download, Upload, Users, Boxes
+} from "lucide-react"
 import { CursorEffect } from "@/components/cursor-effect"
 
 interface Item {
@@ -23,8 +27,8 @@ interface Item {
   currentStock: number
   minStock: number
   maxStock?: number
-  leadTime?: number // days
-  supplierReliability?: number // percentage
+  leadTime?: number
+  supplierReliability?: number
   image: string
 }
 
@@ -48,8 +52,6 @@ interface ShortageItem {
   selected: boolean
   customQuantity?: number
   priority: "high" | "medium" | "low"
-  lastOrderDate?: string
-  averageDemand?: number
 }
 
 const availableItems: Item[] = [
@@ -173,8 +175,7 @@ const availableItems: Item[] = [
 ]
 
 export default function Dashboard() {
-  const router = useRouter()
-  const [retailInfo, setRetailInfo] = useState<{ id: string; name: string } | null>(null)
+  const [retailInfo] = useState({ id: "RT-001", name: "Downtown Market" })
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [deadline, setDeadline] = useState("")
   const [shortageItems, setShortageItems] = useState<ShortageItem[]>([])
@@ -185,26 +186,19 @@ export default function Dashboard() {
   const [orderingStrategy, setOrderingStrategy] = useState<"conservative" | "balanced" | "aggressive">("balanced")
   const [budgetLimit, setBudgetLimit] = useState<number>(0)
   const [cashFlowMode, setCashFlowMode] = useState(false)
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("all")
 
   useEffect(() => {
-    const stored = localStorage.getItem("currentRetail")
-    if (stored) {
-      setRetailInfo(JSON.parse(stored))
-    } else {
-      router.push("/")
-    }
-
-    // Set default deadline to tomorrow
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     setDeadline(tomorrow.toISOString().split("T")[0])
     
-    // Set custom shortage deadline to 3 days from now
     const threeDays = new Date()
     threeDays.setDate(threeDays.getDate() + 3)
     setCustomDeadline(threeDays.toISOString().split("T")[0])
 
-    // Calculate shortage items with enhanced logic
     const shortages = availableItems
       .filter((item) => item.currentStock <= item.minStock)
       .map((item) => {
@@ -218,15 +212,13 @@ export default function Dashboard() {
                 ? ("low" as const)
                 : ("moderate" as const)
 
-        // Calculate suggested quantity based on strategy
         let suggestedQuantity = shortage
         if (orderingStrategy === "conservative") {
-          suggestedQuantity = Math.ceil(shortage * 0.8) // Order 80% of shortage
+          suggestedQuantity = Math.ceil(shortage * 0.8)
         } else if (orderingStrategy === "aggressive") {
-          suggestedQuantity = shortage + Math.ceil((item.maxStock || item.minStock * 2) - item.minStock) * 0.3 // Order to 30% above min
+          suggestedQuantity = shortage + Math.ceil((item.maxStock || item.minStock * 2) - item.minStock) * 0.3
         }
 
-        // Determine priority based on multiple factors
         let priority: "high" | "medium" | "low" = "medium"
         if (urgency === "critical" || item.category === "Dairy" || item.category === "Produce") {
           priority = "high"
@@ -249,19 +241,15 @@ export default function Dashboard() {
           urgency,
           image: item.image,
           price: item.price,
-          selected: urgency === "critical", // Auto-select critical items
+          selected: urgency === "critical",
           priority,
-          lastOrderDate: "2025-07-20", // Mock data
-          averageDemand: Math.ceil(item.minStock / 7), // Mock weekly average
         }
       })
 
     setShortageItems(shortages)
-    
-    // Auto-select critical items
     const criticalItems = new Set(shortages.filter(item => item.urgency === "critical").map(item => item.id))
     setSelectedShortageItems(criticalItems)
-  }, [router, orderingStrategy])
+  }, [orderingStrategy])
 
   const addToOrder = (item: Item) => {
     setOrderItems((prev) => {
@@ -312,30 +300,6 @@ export default function Dashboard() {
     })
   }
 
-  const selectAllByPriority = (priority: "high" | "medium" | "low") => {
-    const itemsWithPriority = shortageItems
-      .filter(item => item.priority === priority)
-      .map(item => item.id)
-    
-    setSelectedShortageItems(prev => {
-      const newSet = new Set(prev)
-      itemsWithPriority.forEach(id => newSet.add(id))
-      return newSet
-    })
-  }
-
-  const selectAllByUrgency = (urgency: "critical" | "low" | "moderate") => {
-    const itemsWithUrgency = shortageItems
-      .filter(item => item.urgency === urgency)
-      .map(item => item.id)
-    
-    setSelectedShortageItems(prev => {
-      const newSet = new Set(prev)
-      itemsWithUrgency.forEach(id => newSet.add(id))
-      return newSet
-    })
-  }
-
   const calculateShortageOrderTotal = () => {
     return shortageItems
       .filter(item => selectedShortageItems.has(item.id))
@@ -347,20 +311,6 @@ export default function Dashboard() {
 
   const sendRequest = () => {
     if (orderItems.length === 0) return
-
-    const request = {
-      retailId: retailInfo?.id,
-      retailName: retailInfo?.name,
-      items: orderItems,
-      deadline,
-      timestamp: new Date().toISOString(),
-      total: orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
-      type: "regular_order"
-    }
-
-    const existingRequests = JSON.parse(localStorage.getItem("warehouseRequests") || "[]")
-    localStorage.setItem("warehouseRequests", JSON.stringify([...existingRequests, request]))
-
     alert("Request sent to warehouse successfully!")
     setOrderItems([])
   }
@@ -371,7 +321,6 @@ export default function Dashboard() {
       return
     }
 
-    const selectedItems = shortageItems.filter(item => selectedShortageItems.has(item.id))
     const totalCost = calculateShortageOrderTotal()
 
     if (budgetLimit > 0 && totalCost > budgetLimit) {
@@ -379,365 +328,550 @@ export default function Dashboard() {
       return
     }
 
-    // Create shortage alert
-    const shortageAlert = {
-      retailId: retailInfo?.id,
-      retailName: retailInfo?.name,
-      shortageItems: selectedItems,
-      timestamp: new Date().toISOString(),
-      type: "shortage_alert",
-      strategy: orderingStrategy,
-      budgetLimit: budgetLimit || null
-    }
-
-    const existingAlerts = JSON.parse(localStorage.getItem("shortageAlerts") || "[]")
-    localStorage.setItem("shortageAlerts", JSON.stringify([...existingAlerts, shortageAlert]))
-
-    // Create individual order requests for selected items
-    const shortageRequests = selectedItems.map((item) => ({
-      retailId: retailInfo?.id,
-      retailName: retailInfo?.name,
-      items: [
-        {
-          id: item.id,
-          name: item.name,
-          quantity: item.customQuantity ?? item.suggestedQuantity,
-          price: item.price,
-        },
-      ],
-      deadline: customDeadline,
-      timestamp: new Date().toISOString(),
-      total: item.price * (item.customQuantity ?? item.suggestedQuantity),
-      type: "shortage_request",
-      priority: item.priority,
-      urgency: item.urgency
-    }))
-
-    const existingRequests = JSON.parse(localStorage.getItem("warehouseRequests") || "[]")
-    localStorage.setItem("warehouseRequests", JSON.stringify([...existingRequests, ...shortageRequests]))
-
     alert(`Selected shortage orders sent successfully! Total: $${totalCost.toFixed(2)}`)
     setShowShortagePopup(false)
     setShowTopAlert(false)
     setSelectedShortageItems(new Set())
   }
 
-  const logout = () => {
-    localStorage.removeItem("currentRetail")
-    router.push("/")
-  }
+  // Filter items based on search and category
+  const filteredItems = availableItems.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         item.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
+    return matchesSearch && matchesCategory
+  })
 
-  if (!retailInfo) return null
-
+  const categories = ["all", ...Array.from(new Set(availableItems.map(item => item.category)))]
   const totalAmount = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const criticalShortages = shortageItems.filter((item) => item.urgency === "critical")
   const shortageOrderTotal = calculateShortageOrderTotal()
   const selectedCount = selectedShortageItems.size
+  const totalItems = availableItems.length
+  const lowStockItems = availableItems.filter(item => item.currentStock <= item.minStock).length
+  const outOfStockItems = availableItems.filter(item => !item.inStock).length
 
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+    <div className="min-h-screen bg-background">
       <CursorEffect />
 
-      {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-900/50 via-blue-900/20 to-gray-900/50" />
-      <div className="absolute inset-0">
-        {[...Array(50)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-blue-400/30 rounded-full animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 2}s`,
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Enhanced Top Right Shortage Alert */}
-      {shortageItems.length > 0 && showTopAlert && (
-        <div className="fixed top-6 right-6 z-50 max-w-sm">
-          <Card
-            className="bg-red-900/30 border-red-500 backdrop-blur-md cursor-pointer hover:bg-red-900/50 transition-all duration-300 animate-pulse hover:scale-105"
-            onClick={() => setShowShortagePopup(true)}
-          >
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-red-400 animate-bounce" />
-                  <CardTitle className="text-red-400 text-sm font-bold">Smart Inventory Alert</CardTitle>
+      {/* Top Navigation */}
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-primary rounded-xl shadow-lg">
+                  <Building2 className="h-6 w-6 text-primary-foreground" />
                 </div>
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowTopAlert(false)
-                  }}
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-900/30 cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-2">
-                <p className="text-red-300 text-xs">
-                  {criticalShortages.length > 0
-                    ? `${criticalShortages.length} critical items need immediate attention!`
-                    : `${shortageItems.length} items running low`}
-                </p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="destructive" className="text-xs animate-pulse">
-                    {shortageItems.length} Items
-                  </Badge>
-                  <span className="text-xs text-red-400">Smart ordering available</span>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">{retailInfo.name}</h1>
+                  <p className="text-sm text-muted-foreground">ID: {retailInfo.id}</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <header className="relative z-10 bg-black/80 backdrop-blur-sm border-b border-gray-800 p-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Package className="h-8 w-8 text-blue-500 animate-pulse" />
-            <div>
-              <h1 className="text-2xl font-bold">{retailInfo.name}</h1>
-              <p className="text-gray-400">ID: {retailInfo.id}</p>
+              
+              {/* Quick Stats */}
+              <div className="hidden lg:flex items-center gap-6 ml-8">
+                <div className="flex items-center gap-2">
+                  <Boxes className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">{totalItems} Items</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  <span className="text-sm font-medium">{lowStockItems} Low Stock</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <X className="h-4 w-4 text-destructive" />
+                  <span className="text-sm font-medium">{outOfStockItems} Out of Stock</span>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={logout}
-              variant="outline"
-              className="border-gray-700 text-gray-300 bg-transparent hover:bg-gray-800 transition-all duration-300 cursor-pointer"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
+
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+              <Button variant="outline" className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Available Items */}
-          <div className="lg:col-span-2">
-            <Card className="bg-gray-900/50 border-gray-800 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-white">Available Items</CardTitle>
-                <CardDescription className="text-gray-400">
-                  Select items you want to order from the warehouse
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {availableItems.map((item) => {
-                    const isLowStock = item.currentStock <= item.minStock
-                    const isCritical = item.currentStock <= item.minStock * 0.3
+      {/* Smart Alert Banner */}
+      {shortageItems.length > 0 && showTopAlert && (
+        <div className="relative overflow-hidden bg-gradient-warning border-b border-warning/20">
+          <div className="absolute inset-0 bg-warning/10" />
+          <div className="relative container mx-auto px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-warning/20 rounded-lg">
+                  <Zap className="h-4 w-4 text-warning-foreground" />
+                </div>
+                <div>
+                  <p className="font-medium text-warning-foreground">
+                    {criticalShortages.length > 0 
+                      ? `${criticalShortages.length} critical items need immediate attention`
+                      : `${shortageItems.length} items running low`
+                    }
+                  </p>
+                  <p className="text-sm text-warning-foreground/80">
+                    Smart AI ordering suggestions available
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  onClick={() => setShowShortagePopup(true)}
+                  size="sm"
+                  className="bg-warning hover:bg-warning/90 text-warning-foreground gap-2"
+                >
+                  <Target className="h-4 w-4" />
+                  Smart Order
+                </Button>
+                <Button 
+                  onClick={() => setShowTopAlert(false)}
+                  variant="ghost" 
+                  size="sm"
+                  className="text-warning-foreground hover:bg-warning/20"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-                    return (
-                      <div
-                        key={item.id}
-                        className={`rounded-lg p-4 border transition-all duration-300 hover:scale-105 hover:shadow-lg ${
-                          !item.inStock
-                            ? "bg-red-900/20 border-red-500/50"
-                            : isCritical
-                              ? "bg-red-900/10 border-red-500/30 animate-pulse"
-                              : isLowStock
-                                ? "bg-orange-900/10 border-orange-500/30"
-                                : "bg-gray-800/50 border-gray-700 hover:bg-gray-700/50"
-                        } backdrop-blur-sm`}
-                      >
-                        <div className="flex items-start gap-3 mb-3">
+      {/* Main Content */}
+      <main className="container mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Inventory Section */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Section Header with Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Inventory Management</h2>
+                <p className="text-muted-foreground mt-1">Manage your store inventory and place orders</p>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-surface rounded-lg p-1">
+                  <Button 
+                    onClick={() => setViewMode("grid")}
+                    variant={viewMode === "grid" ? "default" : "ghost"}
+                    size="sm"
+                    className="px-3"
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    onClick={() => setViewMode("list")}
+                    variant={viewMode === "list" ? "default" : "ghost"}
+                    size="sm"
+                    className="px-3"
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {/* Search and Filter Bar */}
+            <Card className="bg-surface/50 border-border/50">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search products..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 bg-background"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <select 
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      {categories.map(category => (
+                        <option key={category} value={category}>
+                          {category === "all" ? "All Categories" : category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Items Grid/List */}
+            <div className={viewMode === "grid" 
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" 
+              : "space-y-4"
+            }>
+              {filteredItems.map((item) => {
+                const isLowStock = item.currentStock <= item.minStock
+                const isCritical = item.currentStock <= item.minStock * 0.3
+                const stockPercentage = (item.currentStock / (item.maxStock || item.minStock * 2)) * 100
+
+                if (viewMode === "list") {
+                  return (
+                    <Card key={item.id} className="bg-surface/30 hover:bg-surface/50 transition-colors border-border/50">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-4">
                           <img
                             src={item.image || "/placeholder.svg"}
                             alt={item.name}
-                            className="w-16 h-16 rounded-lg object-cover border border-gray-600"
+                            className="w-16 h-16 rounded-lg object-cover border border-border bg-surface"
                           />
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start mb-2">
-                              <h3 className="font-semibold text-white text-sm">{item.name}</h3>
-                              <div className="flex flex-col gap-1">
-                                <Badge variant={item.inStock ? "default" : "destructive"} className="text-xs">
+                          
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <h3 className="font-semibold text-foreground">{item.name}</h3>
+                                <p className="text-sm text-muted-foreground">{item.category}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={item.inStock ? "default" : "destructive"}>
                                   {item.inStock ? "In Stock" : "Out of Stock"}
                                 </Badge>
                                 {isLowStock && item.inStock && (
-                                  <Badge variant="secondary" className="text-xs animate-pulse">
+                                  <Badge variant="outline" className="border-warning text-warning">
                                     Low Stock
                                   </Badge>
                                 )}
                               </div>
                             </div>
-                            <p className="text-gray-400 text-xs mb-1">{item.category}</p>
-                            <p className="text-gray-400 text-xs mb-1">
-                              Stock: {item.currentStock} (Min: {item.minStock})
-                            </p>
-                            <p className="text-gray-400 text-xs">
-                              Lead time: {item.leadTime || 2} days | Reliability: {item.supplierReliability || 90}%
-                            </p>
+                            
+                            <div className="grid grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Current Stock:</span>
+                                <div className="font-medium text-foreground">{item.currentStock}</div>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Min Required:</span>
+                                <div className="font-medium text-foreground">{item.minStock}</div>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Price:</span>
+                                <div className="font-bold text-success text-lg">${item.price}</div>
+                              </div>
+                              <div className="flex justify-end">
+                                <Button
+                                  onClick={() => addToOrder(item)}
+                                  disabled={!item.inStock}
+                                  className="gap-2"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Add to Order
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-green-400 font-bold">${item.price}</span>
+                      </CardContent>
+                    </Card>
+                  )
+                }
+
+                return (
+                  <Card 
+                    key={item.id} 
+                    className={`group relative overflow-hidden bg-surface/30 hover:bg-surface/50 transition-all duration-200 border-border/50 hover:border-border hover:shadow-lg ${
+                      isCritical ? "ring-1 ring-destructive/30" : isLowStock ? "ring-1 ring-warning/30" : ""
+                    }`}
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="relative">
+                          <img
+                            src={item.image || "/placeholder.svg"}
+                            alt={item.name}
+                            className="w-16 h-16 rounded-xl object-cover border border-border bg-surface"
+                          />
+                          {!item.inStock && (
+                            <div className="absolute inset-0 bg-destructive/20 rounded-xl flex items-center justify-center">
+                              <X className="h-6 w-6 text-destructive" />
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between mb-2">
+                            <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
+                            <Badge variant={item.inStock ? "default" : "destructive"} className="ml-2">
+                              {item.inStock ? "In Stock" : "Out"}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-3">{item.category}</p>
+                          
+                          {/* Stock Level Indicator */}
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-muted-foreground">Stock Level</span>
+                              <span className={`font-medium ${
+                                isCritical ? "text-destructive" : 
+                                isLowStock ? "text-warning" : "text-success"
+                              }`}>
+                                {item.currentStock}/{item.maxStock || item.minStock * 2}
+                              </span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full transition-all ${
+                                  isCritical ? "bg-destructive" : 
+                                  isLowStock ? "bg-warning" : "bg-success"
+                                }`}
+                                style={{ width: `${Math.min(100, stockPercentage)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Metrics */}
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="bg-muted/50 rounded-lg p-2">
+                            <span className="text-muted-foreground block">Lead Time</span>
+                            <span className="font-semibold text-foreground">{item.leadTime || 2} days</span>
+                          </div>
+                          <div className="bg-muted/50 rounded-lg p-2">
+                            <span className="text-muted-foreground block">Reliability</span>
+                            <span className="font-semibold text-foreground">{item.supplierReliability || 90}%</span>
+                          </div>
+                        </div>
+
+                        {/* Price and Action */}
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="text-2xl font-bold text-success">${item.price}</div>
                           <Button
                             onClick={() => addToOrder(item)}
                             disabled={!item.inStock}
                             size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 transition-all duration-300 transform hover:scale-105 cursor-pointer"
+                            className="gap-2 group-hover:shadow-md transition-shadow"
                           >
                             <Plus className="h-4 w-4" />
+                            Add
                           </Button>
                         </div>
                       </div>
-                    )
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+
+                      {/* Warning overlay for critical items */}
+                      {isCritical && (
+                        <div className="absolute top-2 left-2">
+                          <Badge variant="destructive" className="gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Critical
+                          </Badge>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+
+            {filteredItems.length === 0 && (
+              <Card className="bg-surface/30 border-border/50">
+                <CardContent className="p-12 text-center">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No items found</h3>
+                  <p className="text-muted-foreground">Try adjusting your search or filter criteria</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
-          {/* Order Summary */}
-          <div>
-            <Card className="bg-gray-900/50 border-gray-800 backdrop-blur-sm sticky top-6">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5 animate-bounce" />
-                  Your Order
+          {/* Order Summary Sidebar */}
+          <div className="space-y-6">
+            {/* Order Summary Card */}
+            <Card className="sticky top-24 bg-surface-elevated border-border/50 shadow-xl">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-foreground">
+                  <div className="p-2 bg-gradient-primary rounded-lg">
+                    <ShoppingCart className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  Current Order
                 </CardTitle>
+                <CardDescription>
+                  {orderItems.length} {orderItems.length === 1 ? 'item' : 'items'} selected
+                </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 {orderItems.length === 0 ? (
-                  <p className="text-gray-400 text-center py-8">No items selected</p>
+                  <div className="text-center py-8">
+                    <ShoppingBag className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground text-sm">Your order is empty</p>
+                    <p className="text-muted-foreground text-xs mt-1">Add items to get started</p>
+                  </div>
                 ) : (
-                  <div className="space-y-4">
-                    {orderItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="bg-gray-800/50 rounded-lg p-3 transition-all duration-300 hover:bg-gray-700/50 backdrop-blur-sm"
-                      >
-                        <div className="flex items-start gap-3 mb-2">
-                          <img
-                            src={item.image || "/placeholder.svg"}
-                            alt={item.name}
-                            className="w-12 h-12 rounded object-cover border border-gray-600"
-                          />
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start mb-2">
-                              <h4 className="font-medium text-white text-sm">{item.name}</h4>
-                              <span className="text-green-400 text-sm">${(item.price * item.quantity).toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  onClick={() => updateQuantity(item.id, -1)}
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 w-8 p-0 border-gray-600 hover:bg-gray-600 transition-all duration-300 cursor-pointer"
-                                >
-                                  <Minus className="h-3 w-3" />
-                                </Button>
-                                <span className="text-white font-medium w-8 text-center">{item.quantity}</span>
-                                <Button
-                                  onClick={() => updateQuantity(item.id, 1)}
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 w-8 p-0 border-gray-600 hover:bg-gray-600 transition-all duration-300 cursor-pointer"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </Button>
+                  <>
+                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                      {orderItems.map((item) => (
+                        <Card key={item.id} className="bg-background/50 border-border/30">
+                          <CardContent className="p-3">
+                            <div className="flex gap-3">
+                              <img
+                                src={item.image || "/placeholder.svg"}
+                                alt={item.name}
+                                className="w-12 h-12 rounded-lg object-cover border border-border"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm text-foreground truncate">{item.name}</h4>
+                                <p className="text-xs text-muted-foreground mb-2">${item.price} each</p>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      onClick={() => updateQuantity(item.id, -1)}
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 w-7 p-0"
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
+                                    <span className="font-medium w-8 text-center text-sm">{item.quantity}</span>
+                                    <Button
+                                      onClick={() => updateQuantity(item.id, 1)}
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 w-7 p-0"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  <span className="font-semibold text-success text-sm">
+                                    ${(item.price * item.quantity).toFixed(2)}
+                                  </span>
+                                </div>
                               </div>
-                              <span className="text-gray-400 text-xs">${item.price} each</span>
                             </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
 
-                    <div className="border-t border-gray-700 pt-4">
-                      <div className="flex justify-between items-center mb-4">
-                        <span className="font-semibold text-white">Total:</span>
-                        <span className="font-bold text-green-400 text-lg animate-pulse">
+                    <Separator className="bg-border/50" />
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-foreground">Total:</span>
+                        <span className="font-bold text-xl text-success">
                           ${totalAmount.toFixed(2)}
                         </span>
                       </div>
 
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Delivery Deadline</label>
-                        <input
-                          type="date"
-                          value={deadline}
-                          onChange={(e) => setDeadline(e.target.value)}
-                          className="w-full bg-gray-800/50 border border-gray-700 rounded-md px-3 py-2 text-white focus:border-blue-500 transition-all duration-300 backdrop-blur-sm cursor-pointer"
-                          min={new Date().toISOString().split("T")[0]}
-                        />
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-foreground">Delivery Date</Label>
+                        <div className="relative">
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type="date"
+                            value={deadline}
+                            onChange={(e) => setDeadline(e.target.value)}
+                            min={new Date().toISOString().split("T")[0]}
+                            className="pl-10 bg-background"
+                          />
+                        </div>
                       </div>
 
-                      <Button
-                        onClick={sendRequest}
-                        className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 transition-all duration-300 transform hover:scale-105 cursor-pointer"
-                      >
-                        <Send className="h-4 w-4 mr-2" />
-                        Send Request to Warehouse
+                      <Button onClick={sendRequest} className="w-full gap-2 bg-gradient-primary hover:opacity-90 transition-opacity">
+                        <Send className="h-4 w-4" />
+                        Send Order Request
                       </Button>
                     </div>
-                  </div>
+                  </>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Stats */}
+            <Card className="bg-surface-elevated border-border/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-foreground text-base">Store Overview</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Total Products</span>
+                  <Badge variant="outline">{totalItems}</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Low Stock</span>
+                  <Badge variant="outline" className="border-warning text-warning">{lowStockItems}</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Out of Stock</span>
+                  <Badge variant="outline" className="border-destructive text-destructive">{outOfStockItems}</Badge>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Order Value</span>
+                  <span className="font-semibold text-success">${totalAmount.toFixed(2)}</span>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
-      </div>
+      </main>
 
-      {/* Enhanced Shortage Management Dialog */}
+      {/* Shortage Management Dialog */}
       <Dialog open={showShortagePopup} onOpenChange={setShowShortagePopup}>
-        <DialogContent className="bg-gray-900/95 backdrop-blur-sm border-red-500 text-white max-w-6xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden bg-surface-elevated border-border">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl text-red-400">
-              <Calculator className="h-6 w-6 animate-bounce" />
-              Smart Shortage Management System
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <div className="p-2 bg-gradient-primary rounded-lg">
+                <Calculator className="h-5 w-5 text-primary-foreground" />
+              </div>
+              Smart Inventory Assistant
             </DialogTitle>
-            <DialogDescription className="text-gray-300">
-              Select which items to order and customize quantities based on your business needs, budget, and cash flow requirements.
+            <DialogDescription className="text-muted-foreground">
+              AI-powered inventory optimization based on current stock levels, demand patterns, and business requirements.
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="items" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-gray-800/50">
-              <TabsTrigger value="items" className="text-white">Items Selection</TabsTrigger>
-              <TabsTrigger value="strategy" className="text-white">Order Strategy</TabsTrigger>
-              <TabsTrigger value="summary" className="text-white">Order Summary</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 bg-surface">
+              <TabsTrigger value="items" className="text-foreground">Items Selection</TabsTrigger>
+              <TabsTrigger value="strategy" className="text-foreground">Order Strategy</TabsTrigger>
+              <TabsTrigger value="summary" className="text-foreground">Order Summary</TabsTrigger>
             </TabsList>
 
             <TabsContent value="items" className="space-y-4">
-              {/* Quick Selection Buttons */}
-              <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={() => selectAllByUrgency("critical")}
+                  onClick={() => {
+                    const criticalIds = shortageItems.filter(item => item.urgency === "critical").map(item => item.id)
+                    setSelectedShortageItems(new Set(criticalIds))
+                  }}
                   size="sm"
                   variant="destructive"
-                  className="cursor-pointer"
+                  className="gap-2"
                 >
-                  Select All Critical
-                </Button>
-                <Button
-                  onClick={() => selectAllByPriority("high")}
-                  size="sm"
-                  variant="outline"
-                  className="border-orange-500 text-orange-400 hover:bg-orange-900/30 cursor-pointer"
-                >
-                  Select High Priority
+                  <AlertTriangle className="h-4 w-4" />
+                  Select Critical Items
                 </Button>
                 <Button
                   onClick={() => setSelectedShortageItems(new Set())}
                   size="sm"
                   variant="outline"
-                  className="border-gray-600 text-gray-300 hover:bg-gray-700 cursor-pointer"
+                  className="gap-2"
                 >
-                  Clear All
+                  <X className="h-4 w-4" />
+                  Clear Selection
                 </Button>
                 <Button
                   onClick={() => {
@@ -746,340 +880,324 @@ export default function Dashboard() {
                   }}
                   size="sm"
                   variant="outline"
-                  className="border-blue-500 text-blue-400 hover:bg-blue-900/30 cursor-pointer"
+                  className="gap-2"
                 >
+                  <Target className="h-4 w-4" />
                   Select All
                 </Button>
               </div>
 
-              {/* Items List */}
-              <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+              <div className="max-h-96 overflow-y-auto space-y-3">
                 {shortageItems.map((item) => (
-                  <div
+                  <Card
                     key={item.id}
-                    className={`p-4 rounded-lg border transition-all duration-300 hover:scale-102 ${
+                    className={`cursor-pointer transition-all hover:shadow-md ${
                       selectedShortageItems.has(item.id)
-                        ? "bg-blue-900/30 border-blue-500"
+                        ? "border-primary bg-primary/5"
                         : item.urgency === "critical"
-                          ? "bg-red-900/20 border-red-500/50"
+                          ? "border-destructive/30 bg-destructive/5"
                           : item.urgency === "low"
-                            ? "bg-orange-900/20 border-orange-500/50"
-                            : "bg-yellow-900/20 border-yellow-500/50"
-                    } backdrop-blur-sm cursor-pointer`}
+                            ? "border-warning/30 bg-warning/5"
+                            : "border-warning/20 bg-warning/5"
+                    }`}
                     onClick={() => toggleShortageSelection(item.id)}
                   >
-                    <div className="flex items-start gap-4">
-                      <Checkbox
-                        checked={selectedShortageItems.has(item.id)}
-                        onChange={() => toggleShortageSelection(item.id)}
-                        className="mt-1"
-                      />
-                      <img
-                        src={item.image || "/placeholder.svg"}
-                        alt={item.name}
-                        className="w-16 h-16 rounded-lg object-cover border border-gray-600 flex-shrink-0"
-                      />
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="font-medium text-white text-lg">{item.name}</h4>
-                            <p className="text-sm text-gray-400">{item.category}</p>
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant={item.urgency === "critical" ? "destructive" : "secondary"} className="text-sm">
-                              {item.urgency.toUpperCase()}
-                            </Badge>
-                            <Badge variant="outline" className={`text-xs ${
-                              item.priority === "high" ? "border-red-500 text-red-400" :
-                              item.priority === "medium" ? "border-yellow-500 text-yellow-400" :
-                              "border-green-500 text-green-400"
-                            }`}>
-                              {item.priority.toUpperCase()} PRIORITY
-                            </Badge>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
-                          <div className="bg-gray-800/50 rounded p-2">
-                            <span className="text-gray-400 block">Current:</span>
-                            <span className={`font-bold ${item.currentStock === 0 ? "text-red-400" : "text-yellow-400"}`}>
-                              {item.currentStock}
-                            </span>
-                          </div>
-                          <div className="bg-gray-800/50 rounded p-2">
-                            <span className="text-gray-400 block">Min Required:</span>
-                            <span className="font-bold text-green-400">{item.minStock}</span>
-                          </div>
-                          <div className="bg-gray-800/50 rounded p-2">
-                            <span className="text-gray-400 block">Lead Time:</span>
-                            <span className="font-bold text-blue-400">{item.leadTime} days</span>
-                          </div>
-                          <div className="bg-gray-800/50 rounded p-2">
-                            <span className="text-gray-400 block">Reliability:</span>
-                            <span className="font-bold text-purple-400">{item.supplierReliability}%</span>
-                          </div>
-                        </div>
-
-                        {/* Quantity Controls */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-400">Quantity to Order:</span>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const currentQty = item.customQuantity ?? item.suggestedQuantity
-                                  updateShortageQuantity(item.id, currentQty - 1)
-                                }}
-                                size="sm"
-                                variant="outline"
-                                className="h-8 w-8 p-0 border-gray-600 hover:bg-gray-600 cursor-pointer"
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <Input
-                                type="number"
-                                value={item.customQuantity ?? item.suggestedQuantity}
-                                onChange={(e) => {
-                                  e.stopPropagation()
-                                  updateShortageQuantity(item.id, parseInt(e.target.value) || 0)
-                                }}
-                                className="w-16 h-8 text-center bg-gray-800 border-gray-600 text-white"
-                                min="0"
-                                max={item.maxStock}
-                              />
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const currentQty = item.customQuantity ?? item.suggestedQuantity
-                                  updateShortageQuantity(item.id, currentQty + 1)
-                                }}
-                                size="sm"
-                                variant="outline"
-                                className="h-8 w-8 p-0 border-gray-600 hover:bg-gray-600 cursor-pointer"
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
+                    <CardContent className="p-4">
+                      <div className="flex gap-4">
+                        <Checkbox
+                          checked={selectedShortageItems.has(item.id)}
+                          onChange={() => toggleShortageSelection(item.id)}
+                          className="mt-1"
+                        />
+                        <img
+                          src={item.image || "/placeholder.svg"}
+                          alt={item.name}
+                          className="w-16 h-16 rounded-lg object-cover border border-border bg-surface flex-shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h4 className="font-semibold text-foreground">{item.name}</h4>
+                              <p className="text-sm text-muted-foreground">{item.category}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Badge variant={item.urgency === "critical" ? "destructive" : "outline"}>
+                                {item.urgency}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {item.priority} priority
+                              </Badge>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-xs text-gray-400">Suggested: {item.suggestedQuantity}</div>
-                            <div className="text-sm font-bold text-green-400">
-                              ${(item.price * (item.customQuantity ?? item.suggestedQuantity)).toFixed(2)}
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-3">
+                            <div className="bg-surface rounded-lg p-2">
+                              <span className="text-muted-foreground block text-xs">Current</span>
+                              <span className={`font-semibold ${item.currentStock === 0 ? "text-destructive" : "text-warning"}`}>
+                                {item.currentStock}
+                              </span>
+                            </div>
+                            <div className="bg-surface rounded-lg p-2">
+                              <span className="text-muted-foreground block text-xs">Required</span>
+                              <span className="font-semibold text-success">{item.minStock}</span>
+                            </div>
+                            <div className="bg-surface rounded-lg p-2">
+                              <span className="text-muted-foreground block text-xs">Lead Time</span>
+                              <span className="font-semibold text-foreground">{item.leadTime} days</span>
+                            </div>
+                            <div className="bg-surface rounded-lg p-2">
+                              <span className="text-muted-foreground block text-xs">Reliability</span>
+                              <span className="font-semibold text-accent">{item.supplierReliability}%</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm text-muted-foreground">Quantity:</span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const currentQty = item.customQuantity ?? item.suggestedQuantity
+                                    updateShortageQuantity(item.id, currentQty - 1)
+                                  }}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <Input
+                                  type="number"
+                                  value={item.customQuantity ?? item.suggestedQuantity}
+                                  onChange={(e) => {
+                                    e.stopPropagation()
+                                    updateShortageQuantity(item.id, parseInt(e.target.value) || 0)
+                                  }}
+                                  className="w-16 h-8 text-center bg-background"
+                                  min="0"
+                                  max={item.maxStock}
+                                />
+                                <Button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const currentQty = item.customQuantity ?? item.suggestedQuantity
+                                    updateShortageQuantity(item.id, currentQty + 1)
+                                  }}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-muted-foreground">Suggested: {item.suggestedQuantity}</div>
+                              <div className="font-semibold text-success">
+                                ${(item.price * (item.customQuantity ?? item.suggestedQuantity)).toFixed(2)}
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             </TabsContent>
 
-            <TabsContent value="strategy" className="space-y-4">
+            <TabsContent value="strategy" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Ordering Strategy */}
-                <Card className="bg-gray-800/50 border-gray-700">
+                <Card className="bg-surface border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-foreground">
                       <TrendingUp className="h-5 w-5" />
                       Ordering Strategy
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-3">
-                      <Label className="text-white">Select your ordering approach:</Label>
-                      <div className="space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="radio"
-                            id="conservative"
-                            name="strategy"
-                            value="conservative"
-                            checked={orderingStrategy === "conservative"}
-                            onChange={(e) => setOrderingStrategy(e.target.value as "conservative")}
-                            className="cursor-pointer"
-                          />
-                          <Label htmlFor="conservative" className="text-white cursor-pointer">
-                            <span className="font-medium">Conservative</span> - Order 80% of shortage (Lower cash commitment)
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="radio"
-                            id="balanced"
-                            name="strategy"
-                            value="balanced"
-                            checked={orderingStrategy === "balanced"}
-                            onChange={(e) => setOrderingStrategy(e.target.value as "balanced")}
-                            className="cursor-pointer"
-                          />
-                          <Label htmlFor="balanced" className="text-white cursor-pointer">
-                            <span className="font-medium">Balanced</span> - Order exact shortage amount (Recommended)
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input
-                            type="radio"
-                            id="aggressive"
-                            name="strategy"
-                            value="aggressive"
-                            checked={orderingStrategy === "aggressive"}
-                            onChange={(e) => setOrderingStrategy(e.target.value as "aggressive")}
-                            className="cursor-pointer"
-                          />
-                          <Label htmlFor="aggressive" className="text-white cursor-pointer">
-                            <span className="font-medium">Aggressive</span> - Order above minimum (Higher buffer)
-                          </Label>
-                        </div>
+                      <Label className="text-foreground">Select your ordering approach:</Label>
+                      <div className="space-y-3">
+                        {[
+                          { value: "conservative", label: "Conservative", desc: "Order 80% of shortage (Lower cash commitment)", icon: "🛡️" },
+                          { value: "balanced", label: "Balanced", desc: "Order exact shortage amount (Recommended)", icon: "⚖️" },
+                          { value: "aggressive", label: "Aggressive", desc: "Order above minimum (Higher buffer)", icon: "🚀" }
+                        ].map(({ value, label, desc, icon }) => (
+                          <Card key={value} className={`cursor-pointer transition-colors ${
+                            orderingStrategy === value ? "border-primary bg-primary/5" : "bg-surface hover:bg-surface/80"
+                          }`}>
+                            <CardContent className="p-3">
+                              <div className="flex items-start space-x-3">
+                                <input
+                                  type="radio"
+                                  id={value}
+                                  name="strategy"
+                                  value={value}
+                                  checked={orderingStrategy === value}
+                                  onChange={(e) => setOrderingStrategy(e.target.value as typeof orderingStrategy)}
+                                  className="mt-1"
+                                />
+                                <div className="flex-1">
+                                  <Label htmlFor={value} className="cursor-pointer">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-lg">{icon}</span>
+                                      <span className="font-medium text-foreground">{label}</span>
+                                    </div>
+                                    <span className="text-sm text-muted-foreground">{desc}</span>
+                                  </Label>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Budget & Cash Flow */}
-                <Card className="bg-gray-800/50 border-gray-700">
+                <Card className="bg-surface border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-foreground">
                       <DollarSign className="h-5 w-5" />
                       Budget Controls
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="cashflow"
-                          checked={cashFlowMode}
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="cashflow"
+                        checked={cashFlowMode}
                         //@ts-ignore
-                          onCheckedChange={setCashFlowMode}
+                        onCheckedChange={setCashFlowMode}
+                      />
+                      <Label htmlFor="cashflow" className="text-foreground">Enable budget limit</Label>
+                    </div>
+                    
+                    {cashFlowMode && (
+                      <div className="space-y-3">
+                        <Label htmlFor="budget" className="text-foreground">Maximum order budget ($)</Label>
+                        <Input
+                          id="budget"
+                          type="number"
+                          value={budgetLimit}
+                          onChange={(e) => setBudgetLimit(parseFloat(e.target.value) || 0)}
+                          placeholder="Enter budget limit"
+                          className="bg-background"
+                          min="0"
+                          step="0.01"
                         />
-                        <Label htmlFor="cashflow" className="text-white cursor-pointer">
-                          Enable budget limit
-                        </Label>
-                      </div>
-                      
-                      {cashFlowMode && (
-                        <div className="space-y-2">
-                          <Label htmlFor="budget" className="text-white">Maximum order budget ($)</Label>
-                          <Input
-                            id="budget"
-                            type="number"
-                            value={budgetLimit}
-                            onChange={(e) => setBudgetLimit(parseFloat(e.target.value) || 0)}
-                            placeholder="Enter budget limit"
-                            className="bg-gray-800 border-gray-600 text-white"
-                            min="0"
-                            step="0.01"
-                          />
-                          <p className="text-xs text-gray-400">
-                            Current order total: ${shortageOrderTotal.toFixed(2)}
+                        <div className="p-3 bg-surface-elevated rounded-lg">
+                          <p className="text-sm text-muted-foreground">
+                            Current order total: <span className="font-medium text-foreground">${shortageOrderTotal.toFixed(2)}</span>
                             {budgetLimit > 0 && shortageOrderTotal > budgetLimit && (
-                              <span className="text-red-400 ml-2">⚠ Exceeds budget!</span>
+                              <span className="text-destructive ml-2 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                Exceeds budget!
+                              </span>
                             )}
                           </p>
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Delivery Settings */}
-                <Card className="bg-gray-800/50 border-gray-700 md:col-span-2">
-                  <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
-                      <Truck className="h-5 w-5" />
-                      Delivery Preferences
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="shortage-deadline" className="text-white">Preferred delivery date</Label>
-                        <Input
-                          id="shortage-deadline"
-                          type="date"
-                          value={customDeadline}
-                          onChange={(e) => setCustomDeadline(e.target.value)}
-                          className="bg-gray-800 border-gray-600 text-white cursor-pointer"
-                          min={new Date().toISOString().split("T")[0]}
-                        />
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-white">Delivery notes</Label>
-                        <div className="text-sm text-gray-400">
-                          • Critical items will be prioritized
-                          • High priority items may qualify for expedited shipping
-                          • Lead times vary by supplier reliability
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
+
+              <Card className="bg-surface border-border/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-foreground">
+                    <Truck className="h-5 w-5" />
+                    Delivery Preferences
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="shortage-deadline" className="text-foreground">Preferred delivery date</Label>
+                      <Input
+                        id="shortage-deadline"
+                        type="date"
+                        value={customDeadline}
+                        onChange={(e) => setCustomDeadline(e.target.value)}
+                        className="bg-background"
+                        min={new Date().toISOString().split("T")[0]}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-foreground">Delivery notes</Label>
+                      <div className="text-sm text-muted-foreground space-y-1 bg-surface-elevated p-3 rounded-lg">
+                        <p>• Critical items will be prioritized</p>
+                        <p>• High priority items qualify for expedited shipping</p>
+                        <p>• Lead times vary by supplier reliability</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="summary" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Order Statistics */}
-                <Card className="bg-blue-900/20 border-blue-500/50">
-                  <CardContent className="p-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-400">{selectedCount}</div>
-                      <div className="text-sm text-gray-400">Items Selected</div>
-                    </div>
+                <Card className="bg-gradient-primary text-primary-foreground">
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold">{selectedCount}</div>
+                    <div className="text-sm opacity-90">Items Selected</div>
                   </CardContent>
                 </Card>
                 
-                <Card className="bg-green-900/20 border-green-500/50">
-                  <CardContent className="p-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-400">${shortageOrderTotal.toFixed(2)}</div>
-                      <div className="text-sm text-gray-400">Total Cost</div>
-                    </div>
+                <Card className="bg-gradient-success text-success-foreground">
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold">${shortageOrderTotal.toFixed(2)}</div>
+                    <div className="text-sm opacity-90">Total Cost</div>
                   </CardContent>
                 </Card>
                 
-                <Card className="bg-purple-900/20 border-purple-500/50">
-                  <CardContent className="p-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-400">
-                        {selectedShortageItems.size > 0 ? 
-                          Math.round(shortageItems
-                            .filter(item => selectedShortageItems.has(item.id))
-                            .reduce((sum, item) => sum + item.leadTime, 0) / selectedShortageItems.size)
-                          : 0
-                        }
-                      </div>
-                      <div className="text-sm text-gray-400">Avg Lead Time (days)</div>
+                <Card className="bg-gradient-accent text-accent-foreground">
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold">
+                      {selectedShortageItems.size > 0 ? 
+                        Math.round(shortageItems
+                          .filter(item => selectedShortageItems.has(item.id))
+                          .reduce((sum, item) => sum + item.leadTime, 0) / selectedShortageItems.size)
+                        : 0
+                      }
                     </div>
+                    <div className="text-sm opacity-90">Avg Lead Time (days)</div>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Selected Items Preview */}
               {selectedCount > 0 && (
-                <Card className="bg-gray-800/50 border-gray-700">
+                <Card className="bg-surface border-border/50">
                   <CardHeader>
-                    <CardTitle className="text-white">Selected Items Summary</CardTitle>
+                    <CardTitle className="text-foreground">Selected Items Summary</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {shortageItems
                         .filter(item => selectedShortageItems.has(item.id))
                         .map(item => (
-                          <div key={item.id} className="flex justify-between items-center p-2 bg-gray-900/50 rounded">
-                            <div>
-                              <span className="text-white font-medium">{item.name}</span>
-                              <Badge variant="outline" className="ml-2 text-xs">
-                                {item.urgency}
-                              </Badge>
+                          <div key={item.id} className="flex justify-between items-center p-3 bg-surface-elevated rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={item.image || "/placeholder.svg"}
+                                alt={item.name}
+                                className="w-10 h-10 rounded-lg object-cover border border-border"
+                              />
+                              <div>
+                                <span className="font-medium text-foreground">{item.name}</span>
+                                <Badge variant="outline" className="ml-2 text-xs">
+                                  {item.urgency}
+                                </Badge>
+                              </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-white">
+                              <div className="font-medium text-foreground">
                                 {item.customQuantity ?? item.suggestedQuantity} units
                               </div>
-                              <div className="text-green-400 text-sm">
+                              <div className="text-success font-semibold">
                                 ${(item.price * (item.customQuantity ?? item.suggestedQuantity)).toFixed(2)}
                               </div>
                             </div>
@@ -1090,15 +1208,16 @@ export default function Dashboard() {
                 </Card>
               )}
 
-              {/* Budget Warning */}
               {budgetLimit > 0 && shortageOrderTotal > budgetLimit && (
-                <Card className="bg-red-900/20 border-red-500">
+                <Card className="border-destructive bg-destructive/5">
                   <CardContent className="p-4">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-destructive/20 rounded-lg">
+                        <AlertTriangle className="h-5 w-5 text-destructive" />
+                      </div>
                       <div>
-                        <div className="font-medium text-red-400">Budget Exceeded</div>
-                        <div className="text-sm text-gray-300">
+                        <div className="font-medium text-destructive">Budget Exceeded</div>
+                        <div className="text-sm text-muted-foreground">
                           Order total (${shortageOrderTotal.toFixed(2)}) exceeds budget limit (${budgetLimit.toFixed(2)}).
                           Please adjust quantities or increase budget.
                         </div>
@@ -1110,46 +1229,25 @@ export default function Dashboard() {
             </TabsContent>
           </Tabs>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4 border-t border-gray-700">
+          <div className="flex gap-3 pt-4 border-t border-border">
             <Button
               onClick={sendSelectedShortageOrders}
               disabled={selectedCount === 0 || (budgetLimit > 0 && shortageOrderTotal > budgetLimit)}
-              className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 transition-all duration-300 transform hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 gap-2 bg-gradient-primary hover:opacity-90"
             >
-              <Bell className="h-4 w-4 mr-2" />
+              <Bell className="h-4 w-4" />
               Send Selected Orders ({selectedCount} items - ${shortageOrderTotal.toFixed(2)})
             </Button>
             <Button
               onClick={() => setShowShortagePopup(false)}
               variant="outline"
-              className="border-gray-600 text-gray-300 bg-transparent hover:bg-gray-800 transition-all duration-300 cursor-pointer"
+              className="gap-2"
             >
-              <X className="h-4 w-4 mr-2" />
               Cancel
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-5px);
-          }
-        }
-        
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
-        }
-
-        .hover\\:scale-102:hover {
-          transform: scale(1.02);
-        }
-      `}</style>
     </div>
   )
 }
