@@ -363,6 +363,7 @@ function OrdersPanel() {
   const [activeTab, setActiveTab] = useState<'orders' | 'stops'>('orders')
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(['pending', 'confirmed', 'in_transit', 'delivered']))
   const [showAddStopModal, setShowAddStopModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Route store integration
   const { 
@@ -417,11 +418,28 @@ function OrdersPanel() {
     }
   }
 
-  // Filter orders based on selected statuses
+  // Filter orders based on selected statuses and search query
   useEffect(() => {
-    const filtered = orders.filter(order => selectedStatuses.has(order.status))
+    let filtered = orders.filter(order => selectedStatuses.has(order.status))
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(order => {
+        const productName = order.product?.name || ''
+        const retailerName = order.retail?.name || ''
+        const orderId = order.id.toString()
+        
+        return (
+          productName.toLowerCase().includes(query) ||
+          retailerName.toLowerCase().includes(query) ||
+          orderId.includes(query)
+        )
+      })
+    }
+    
     setFilteredOrders(filtered)
-  }, [orders, selectedStatuses])
+  }, [orders, selectedStatuses, searchQuery])
 
   // Load initial data
   useEffect(() => {
@@ -497,6 +515,11 @@ function OrdersPanel() {
   // Clear all status filters
   const clearAllStatusFilters = () => {
     setSelectedStatuses(new Set())
+  }
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('')
   }
 
   // Utility functions for styling
@@ -600,6 +623,38 @@ function OrdersPanel() {
         </div>
       )}
 
+      {/* Search Bar - Orders Only */}
+      {isExpanded && activeTab === 'orders' && (
+        <div className="p-4 border-b border-gray-700 bg-gray-800/30">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by product name, retailer, or order ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 pl-8 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+            />
+            <div className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+              🔍
+            </div>
+            {searchQuery && (
+              <button
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="mt-2 text-xs text-gray-400">
+              {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filter Panel - Orders Only */}
       {showFilters && isExpanded && activeTab === 'orders' && (
         <div className="p-4 border-b border-gray-700 bg-gray-800/30">
@@ -684,19 +739,32 @@ function OrdersPanel() {
                 <div className="text-center py-8 text-gray-400">
                   <div className="text-2xl mb-2">📭</div>
                   <div>
-                    {selectedStatuses.size === 0
-                      ? 'No status filters selected'
-                      : 'No orders match the selected filters'
-                    }
+                    {searchQuery ? (
+                      <>No orders match "{searchQuery}"</>
+                    ) : selectedStatuses.size === 0 ? (
+                      'No status filters selected'
+                    ) : (
+                      'No orders match the selected filters'
+                    )}
                   </div>
-                  {selectedStatuses.size === 0 && (
-                    <button
-                      onClick={selectAllStatuses}
-                      className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                    >
-                      Show All Orders
-                    </button>
-                  )}
+                  <div className="flex gap-2 justify-center mt-3">
+                    {searchQuery && (
+                      <button
+                        onClick={clearSearch}
+                        className="px-3 py-1 bg-cyan-600 text-white rounded text-xs hover:bg-cyan-700"
+                      >
+                        Clear Search
+                      </button>
+                    )}
+                    {selectedStatuses.size === 0 && (
+                      <button
+                        onClick={selectAllStatuses}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        Show All Statuses
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 filteredOrders.map((order) => (

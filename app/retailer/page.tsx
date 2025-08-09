@@ -10,13 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { 
-  Minus, Plus, ShoppingCart, LogOut, Send, Package, AlertTriangle, Bell, X, 
-  Calculator, TrendingUp, DollarSign, Truck, Building2, BarChart3, Search, 
-  Filter, Eye, Settings, Zap, Target, ShoppingBag, Clock, Star, ChevronRight,
-  Grid3X3, List, RefreshCw, Download, Upload, Users, Boxes
-} from "lucide-react"
-import { CursorEffect } from "@/components/cursor-effect"
+import { Minus, Plus, ShoppingCart, LogOut, Send, Package, AlertTriangle, Bell, X, Calculator, TrendingUp, DollarSign, Truck, Building2, BarChart3, Search, Filter, Eye, Settings, Zap, Target, ShoppingBag, Clock, Star, ChevronRight, Grid3X3, List, RefreshCw, Download, Upload, Users, Boxes } from 'lucide-react'
 
 interface Item {
   id: string
@@ -54,127 +48,23 @@ interface ShortageItem {
   priority: "high" | "medium" | "low"
 }
 
-const availableItems: Item[] = [
-  {
-    id: "1",
-    name: "Coca Cola 12-Pack",
-    category: "Beverages",
-    price: 4.99,
-    inStock: true,
-    currentStock: 15,
-    minStock: 20,
-    maxStock: 80,
-    leadTime: 2,
-    supplierReliability: 95,
-    image: "/assets/1.png",
-  },
-  {
-    id: "2",
-    name: "Lay's Potato Chips",
-    category: "Snacks",
-    price: 2.49,
-    inStock: true,
-    currentStock: 8,
-    minStock: 25,
-    maxStock: 100,
-    leadTime: 1,
-    supplierReliability: 98,
-    image: "/assets/2.png",
-  },
-  {
-    id: "3",
-    name: "Wonder Bread",
-    category: "Bakery",
-    price: 1.99,
-    inStock: true,
-    currentStock: 45,
-    minStock: 30,
-    maxStock: 60,
-    leadTime: 1,
-    supplierReliability: 92,
-    image: "/assets/3.png",
-  },
-  {
-    id: "4",
-    name: "Milk Gallon",
-    category: "Dairy",
-    price: 3.49,
-    inStock: true,
-    currentStock: 3,
-    minStock: 15,
-    maxStock: 40,
-    leadTime: 1,
-    supplierReliability: 90,
-    image: "/assets/4.png",
-  },
-  {
-    id: "5",
-    name: "Bananas (lb)",
-    category: "Produce",
-    price: 0.68,
-    inStock: true,
-    currentStock: 12,
-    minStock: 20,
-    maxStock: 50,
-    leadTime: 2,
-    supplierReliability: 85,
-    image: "/assets/5.png",
-  },
-  {
-    id: "7",
-    name: "Tide Detergent",
-    category: "Household",
-    price: 12.99,
-    inStock: true,
-    currentStock: 22,
-    minStock: 15,
-    maxStock: 40,
-    leadTime: 3,
-    supplierReliability: 96,
-    image: "/assets/7.png",
-  },
-  {
-    id: "8",
-    name: "Charmin Toilet Paper",
-    category: "Household",
-    price: 8.99,
-    inStock: true,
-    currentStock: 18,
-    minStock: 20,
-    maxStock: 60,
-    leadTime: 2,
-    supplierReliability: 94,
-    image: "/assets/8.png",
-  },
-  {
-    id: "9",
-    name: "Cheerios Cereal",
-    category: "Breakfast",
-    price: 4.49,
-    inStock: true,
-    currentStock: 5,
-    minStock: 12,
-    maxStock: 50,
-    leadTime: 2,
-    supplierReliability: 97,
-    image: "/assets/9.png",
-  },
-  {
-    id: "10",
-    name: "Frozen Pizza",
-    category: "Frozen",
-    price: 3.99,
-    inStock: true,
-    currentStock: 28,
-    minStock: 25,
-    maxStock: 80,
-    leadTime: 3,
-    supplierReliability: 93,
-    image: "/assets/10.png",
-  },
-]
+const availableItems: Item[] = [{ id: "1", name: "Coca Cola 12-Pack", category: "Beverages", price: 4.99, inStock: true, currentStock: 15, minStock: 20, maxStock: 80, leadTime: 2, supplierReliability: 95, image: "/assets/1.png", },
+{ id: "2", name: "Lay's Potato Chips", category: "Snacks", price: 2.49, inStock: true, currentStock: 8, minStock: 25, maxStock: 100, leadTime: 1, supplierReliability: 98, image: "/assets/2.png", }, { id: "3", name: "Wonder Bread", category: "Bakery", price: 1.99, inStock: true, currentStock: 45, minStock: 30, maxStock: 60, leadTime: 1, supplierReliability: 92, image: "/assets/3.png", }, { id: "4", name: "Milk Gallon", category: "Dairy", price: 3.49, inStock: true, currentStock: 3, minStock: 15, maxStock: 40, leadTime: 1, supplierReliability: 90, image: "/assets/4.png", }, { id: "5", name: "Bananas (lb)", category: "Produce", price: 0.68, inStock: true, currentStock: 12, minStock: 20, maxStock: 50, leadTime: 2, supplierReliability: 85, image: "/assets/5.png", }, { id: "7", name: "Tide Detergent", category: "Household", price: 12.99, inStock: true, currentStock: 22, minStock: 15, maxStock: 40, leadTime: 3, supplierReliability: 96, image: "/assets/7.png", }, { id: "8", name: "Charmin Toilet Paper", category: "Household", price: 8.99, inStock: true, currentStock: 18, minStock: 20, maxStock: 60, leadTime: 2, supplierReliability: 94, image: "/assets/8.png", }, { id: "9", name: "Cheerios Cereal", category: "Breakfast", price: 4.49, inStock: true, currentStock: 5, minStock: 12, maxStock: 50, leadTime: 2, supplierReliability: 97, image: "/assets/9.png", }, { id: "10", name: "Frozen Pizza", category: "Frozen", price: 3.99, inStock: true, currentStock: 28, minStock: 25, maxStock: 80, leadTime: 3, supplierReliability: 93, image: "/assets/10.png", },
+{
+  id: "11",
+  name: "Medical Crate",
+  category: "Medical",
+  price: 30.99,
+  inStock: true,
+  currentStock: 28,
+  minStock: 25,
+  maxStock: 80,
+  leadTime: 3,
+  supplierReliability: 93,
+  image: "/placeholder.svg?height=64&width=64&text=Frozen+Pizza",
+}]
 
-export default function Dashboard() {
+export default function InventoryDashboard() {
   const [retailInfo] = useState({ id: "RT-001", name: "Downtown Market" })
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [deadline, setDeadline] = useState("")
@@ -194,7 +84,7 @@ export default function Dashboard() {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     setDeadline(tomorrow.toISOString().split("T")[0])
-    
+
     const threeDays = new Date()
     threeDays.setDate(threeDays.getDate() + 3)
     setCustomDeadline(threeDays.toISOString().split("T")[0])
@@ -236,7 +126,6 @@ export default function Dashboard() {
           minStock: item.minStock,
           maxStock: item.maxStock || item.minStock * 2,
           leadTime: item.leadTime || 2,
-          supplierReliability: item.supplierReliability || 90,
           suggestedQuantity,
           urgency,
           image: item.image,
@@ -279,9 +168,9 @@ export default function Dashboard() {
   }
 
   const updateShortageQuantity = (itemId: string, quantity: number) => {
-    setShortageItems(prev => 
-      prev.map(item => 
-        item.id === itemId 
+    setShortageItems(prev =>
+      prev.map(item =>
+        item.id === itemId
           ? { ...item, customQuantity: Math.max(0, quantity) }
           : item
       )
@@ -320,14 +209,11 @@ export default function Dashboard() {
       alert("Please select items to order.")
       return
     }
-
     const totalCost = calculateShortageOrderTotal()
-
     if (budgetLimit > 0 && totalCost > budgetLimit) {
       alert(`Order total ($${totalCost.toFixed(2)}) exceeds budget limit ($${budgetLimit.toFixed(2)}). Please adjust quantities or budget.`)
       return
     }
-
     alert(`Selected shortage orders sent successfully! Total: $${totalCost.toFixed(2)}`)
     setShowShortagePopup(false)
     setShowTopAlert(false)
@@ -336,8 +222,8 @@ export default function Dashboard() {
 
   // Filter items based on search and category
   const filteredItems = availableItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         item.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.category.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
     return matchesSearch && matchesCategory
   })
@@ -352,51 +238,48 @@ export default function Dashboard() {
   const outOfStockItems = availableItems.filter(item => !item.inStock).length
 
   return (
-    <div className="min-h-screen bg-background">
-      <CursorEffect />
-
+    <div className="min-h-screen bg-gray-50">
       {/* Top Navigation */}
-      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-primary rounded-xl shadow-lg">
-                  <Building2 className="h-6 w-6 text-primary-foreground" />
+                <div className="p-2 bg-blue-600 rounded-xl shadow-lg">
+                  <Building2 className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-foreground">{retailInfo.name}</h1>
-                  <p className="text-sm text-muted-foreground">ID: {retailInfo.id}</p>
+                  <h1 className="text-xl font-bold text-gray-900">{retailInfo.name}</h1>
+                  <p className="text-sm text-gray-600">ID: {retailInfo.id}</p>
                 </div>
               </div>
-              
+
               {/* Quick Stats */}
               <div className="hidden lg:flex items-center gap-6 ml-8">
                 <div className="flex items-center gap-2">
-                  <Boxes className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">{totalItems} Items</span>
+                  <Boxes className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-900">{totalItems} Items</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  <span className="text-sm font-medium">{lowStockItems} Low Stock</span>
+                  <AlertTriangle className="h-4 w-4 text-orange-500" />
+                  <span className="text-sm font-medium text-gray-900">{lowStockItems} Low Stock</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <X className="h-4 w-4 text-destructive" />
-                  <span className="text-sm font-medium">{outOfStockItems} Out of Stock</span>
+                  <X className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium text-gray-900">{outOfStockItems} Out of Stock</span>
                 </div>
               </div>
             </div>
-
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" className="gap-2">
+              <Button variant="outline" size="sm" className="gap-2 text-gray-700 border-gray-300 hover:bg-gray-50">
                 <Download className="h-4 w-4" />
                 Export
               </Button>
-              <Button variant="outline" size="sm" className="gap-2">
+              <Button variant="outline" size="sm" className="gap-2 text-gray-700 border-gray-300 hover:bg-gray-50">
                 <Settings className="h-4 w-4" />
                 Settings
               </Button>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2 text-gray-700 border-gray-300 hover:bg-gray-50">
                 <LogOut className="h-4 w-4" />
                 Logout
               </Button>
@@ -407,40 +290,39 @@ export default function Dashboard() {
 
       {/* Smart Alert Banner */}
       {shortageItems.length > 0 && showTopAlert && (
-        <div className="relative overflow-hidden bg-gradient-warning border-b border-warning/20">
-          <div className="absolute inset-0 bg-warning/10" />
-          <div className="relative container mx-auto px-6 py-3">
+        <div className="relative overflow-hidden bg-orange-100 border-b border-orange-200">
+          <div className="container mx-auto px-6 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-warning/20 rounded-lg">
-                  <Zap className="h-4 w-4 text-warning-foreground" />
+                <div className="p-1.5 bg-orange-200 rounded-lg">
+                  <Zap className="h-4 w-4 text-orange-700" />
                 </div>
                 <div>
-                  <p className="font-medium text-warning-foreground">
-                    {criticalShortages.length > 0 
+                  <p className="font-medium text-orange-800">
+                    {criticalShortages.length > 0
                       ? `${criticalShortages.length} critical items need immediate attention`
                       : `${shortageItems.length} items running low`
                     }
                   </p>
-                  <p className="text-sm text-warning-foreground/80">
+                  <p className="text-sm text-orange-700">
                     Smart AI ordering suggestions available
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button 
+                <Button
                   onClick={() => setShowShortagePopup(true)}
                   size="sm"
-                  className="bg-warning hover:bg-warning/90 text-warning-foreground gap-2"
+                  className="bg-orange-600 hover:bg-orange-700 text-white gap-2"
                 >
                   <Target className="h-4 w-4" />
                   Smart Order
                 </Button>
-                <Button 
+                <Button
                   onClick={() => setShowTopAlert(false)}
-                  variant="ghost" 
+                  variant="ghost"
                   size="sm"
-                  className="text-warning-foreground hover:bg-warning/20"
+                  className="text-orange-700 hover:bg-orange-200"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -458,13 +340,13 @@ export default function Dashboard() {
             {/* Section Header with Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-foreground">Inventory Management</h2>
-                <p className="text-muted-foreground mt-1">Manage your store inventory and place orders</p>
+                <h2 className="text-2xl font-bold text-gray-900">Inventory Management</h2>
+                <p className="text-gray-600 mt-1">Manage your store inventory and place orders</p>
               </div>
-              
+
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 bg-surface rounded-lg p-1">
-                  <Button 
+                <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                  <Button
                     onClick={() => setViewMode("grid")}
                     variant={viewMode === "grid" ? "default" : "ghost"}
                     size="sm"
@@ -472,7 +354,7 @@ export default function Dashboard() {
                   >
                     <Grid3X3 className="h-4 w-4" />
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => setViewMode("list")}
                     variant={viewMode === "list" ? "default" : "ghost"}
                     size="sm"
@@ -481,7 +363,7 @@ export default function Dashboard() {
                     <List className="h-4 w-4" />
                   </Button>
                 </div>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button variant="outline" size="sm" className="gap-2 text-gray-700 border-gray-300 hover:bg-gray-50">
                   <RefreshCw className="h-4 w-4" />
                   Refresh
                 </Button>
@@ -489,27 +371,27 @@ export default function Dashboard() {
             </div>
 
             {/* Search and Filter Bar */}
-            <Card className="bg-surface/50 border-border/50">
+            <Card className="bg-white border-gray-200">
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4">
                   <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
                       placeholder="Search products..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 bg-background"
+                      className="pl-10 bg-white text-gray-900 placeholder-gray-500"
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-muted-foreground" />
-                    <select 
+                    <Filter className="h-4 w-4 text-gray-400" />
+                    <select
                       value={selectedCategory}
                       onChange={(e) => setSelectedCategory(e.target.value)}
-                      className="bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       {categories.map(category => (
-                        <option key={category} value={category}>
+                        <option key={category} value={category} className="text-gray-900">
                           {category === "all" ? "All Categories" : category}
                         </option>
                       ))}
@@ -520,8 +402,8 @@ export default function Dashboard() {
             </Card>
 
             {/* Items Grid/List */}
-            <div className={viewMode === "grid" 
-              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" 
+            <div className={viewMode === "grid"
+              ? "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
               : "space-y-4"
             }>
               {filteredItems.map((item) => {
@@ -531,51 +413,51 @@ export default function Dashboard() {
 
                 if (viewMode === "list") {
                   return (
-                    <Card key={item.id} className="bg-surface/30 hover:bg-surface/50 transition-colors border-border/50">
+                    <Card key={item.id} className="bg-white hover:bg-gray-50 transition-colors border-gray-200">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-4">
                           <img
                             src={item.image || "/placeholder.svg"}
                             alt={item.name}
-                            className="w-16 h-16 rounded-lg object-cover border border-border bg-surface"
+                            className="w-16 h-16 rounded-lg object-cover border border-gray-200 bg-gray-100"
                           />
-                          
+
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between mb-2">
                               <div>
-                                <h3 className="font-semibold text-foreground">{item.name}</h3>
-                                <p className="text-sm text-muted-foreground">{item.category}</p>
+                                <h3 className="font-semibold text-gray-900">{item.name}</h3>
+                                <p className="text-sm text-gray-600">{item.category}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Badge variant={item.inStock ? "default" : "destructive"}>
+                                <Badge variant={item.inStock ? "default" : "destructive"} className={item.inStock ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300"}>
                                   {item.inStock ? "In Stock" : "Out of Stock"}
                                 </Badge>
                                 {isLowStock && item.inStock && (
-                                  <Badge variant="outline" className="border-warning text-warning">
+                                  <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-50">
                                     Low Stock
                                   </Badge>
                                 )}
                               </div>
                             </div>
-                            
+
                             <div className="grid grid-cols-4 gap-4 text-sm">
                               <div>
-                                <span className="text-muted-foreground">Current Stock:</span>
-                                <div className="font-medium text-foreground">{item.currentStock}</div>
+                                <span className="text-gray-600">Current Stock:</span>
+                                <div className="font-medium text-gray-900">{item.currentStock}</div>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Min Required:</span>
-                                <div className="font-medium text-foreground">{item.minStock}</div>
+                                <span className="text-gray-600">Min Required:</span>
+                                <div className="font-medium text-gray-900">{item.minStock}</div>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Price:</span>
-                                <div className="font-bold text-success text-lg">${item.price}</div>
+                                <span className="text-gray-600">Price:</span>
+                                <div className="font-bold text-green-600 text-lg">${item.price}</div>
                               </div>
                               <div className="flex justify-end">
                                 <Button
                                   onClick={() => addToOrder(item)}
                                   disabled={!item.inStock}
-                                  className="gap-2"
+                                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
                                 >
                                   <Plus className="h-4 w-4" />
                                   Add to Order
@@ -590,11 +472,10 @@ export default function Dashboard() {
                 }
 
                 return (
-                  <Card 
-                    key={item.id} 
-                    className={`group relative overflow-hidden bg-surface/30 hover:bg-surface/50 transition-all duration-200 border-border/50 hover:border-border hover:shadow-lg ${
-                      isCritical ? "ring-1 ring-destructive/30" : isLowStock ? "ring-1 ring-warning/30" : ""
-                    }`}
+                  <Card
+                    key={item.id}
+                    className={`group relative overflow-hidden bg-white hover:bg-gray-50 transition-all duration-200 border-gray-200 hover:border-gray-300 hover:shadow-lg ${isCritical ? "ring-1 ring-red-300" : isLowStock ? "ring-1 ring-orange-300" : ""
+                      }`}
                   >
                     <CardContent className="p-5">
                       <div className="flex items-start gap-4 mb-4">
@@ -602,41 +483,39 @@ export default function Dashboard() {
                           <img
                             src={item.image || "/placeholder.svg"}
                             alt={item.name}
-                            className="w-16 h-16 rounded-xl object-cover border border-border bg-surface"
+                            className="w-16 h-16 rounded-xl object-cover border border-gray-200 bg-gray-100"
                           />
                           {!item.inStock && (
-                            <div className="absolute inset-0 bg-destructive/20 rounded-xl flex items-center justify-center">
-                              <X className="h-6 w-6 text-destructive" />
+                            <div className="absolute inset-0 bg-red-100 rounded-xl flex items-center justify-center">
+                              <X className="h-6 w-6 text-red-500" />
                             </div>
                           )}
                         </div>
-                        
+
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
-                            <h3 className="font-semibold text-foreground truncate">{item.name}</h3>
-                            <Badge variant={item.inStock ? "default" : "destructive"} className="ml-2">
+                            <h3 className="font-semibold text-gray-900 truncate">{item.name}</h3>
+                            <Badge variant={item.inStock ? "default" : "destructive"} className={`ml-2 ${item.inStock ? "bg-green-100 text-green-800 border-green-300" : "bg-red-100 text-red-800 border-red-300"}`}>
                               {item.inStock ? "In Stock" : "Out"}
                             </Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground mb-3">{item.category}</p>
-                          
+                          <p className="text-sm text-gray-600 mb-3">{item.category}</p>
+
                           {/* Stock Level Indicator */}
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs">
-                              <span className="text-muted-foreground">Stock Level</span>
-                              <span className={`font-medium ${
-                                isCritical ? "text-destructive" : 
-                                isLowStock ? "text-warning" : "text-success"
-                              }`}>
+                              <span className="text-gray-600">Stock Level</span>
+                              <span className={`font-medium ${isCritical ? "text-red-600" :
+                                isLowStock ? "text-orange-600" : "text-green-600"
+                                }`}>
                                 {item.currentStock}/{item.maxStock || item.minStock * 2}
                               </span>
                             </div>
-                            <div className="w-full bg-muted rounded-full h-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
                               <div
-                                className={`h-2 rounded-full transition-all ${
-                                  isCritical ? "bg-destructive" : 
-                                  isLowStock ? "bg-warning" : "bg-success"
-                                }`}
+                                className={`h-2 rounded-full transition-all ${isCritical ? "bg-red-500" :
+                                  isLowStock ? "bg-orange-500" : "bg-green-500"
+                                  }`}
                                 style={{ width: `${Math.min(100, stockPercentage)}%` }}
                               />
                             </div>
@@ -647,24 +526,20 @@ export default function Dashboard() {
                       <div className="space-y-3">
                         {/* Metrics */}
                         <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div className="bg-muted/50 rounded-lg p-2">
-                            <span className="text-muted-foreground block">Lead Time</span>
-                            <span className="font-semibold text-foreground">{item.leadTime || 2} days</span>
-                          </div>
-                          <div className="bg-muted/50 rounded-lg p-2">
-                            <span className="text-muted-foreground block">Reliability</span>
-                            <span className="font-semibold text-foreground">{item.supplierReliability || 90}%</span>
+                          <div className="bg-gray-100 rounded-lg p-2">
+                            <span className="text-gray-600 block">Lead Time</span>
+                            <span className="font-semibold text-gray-900">{item.leadTime || 2} days</span>
                           </div>
                         </div>
 
                         {/* Price and Action */}
                         <div className="flex items-center justify-between pt-1">
-                          <div className="text-2xl font-bold text-success">${item.price}</div>
+                          <div className="text-2xl font-bold text-green-600">${item.price}</div>
                           <Button
                             onClick={() => addToOrder(item)}
                             disabled={!item.inStock}
                             size="sm"
-                            className="gap-2 group-hover:shadow-md transition-shadow"
+                            className="gap-2 group-hover:shadow-md transition-shadow bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
                           >
                             <Plus className="h-4 w-4" />
                             Add
@@ -675,7 +550,7 @@ export default function Dashboard() {
                       {/* Warning overlay for critical items */}
                       {isCritical && (
                         <div className="absolute top-2 left-2">
-                          <Badge variant="destructive" className="gap-1">
+                          <Badge variant="destructive" className="gap-1 bg-red-100 text-red-800 border-red-300">
                             <AlertTriangle className="h-3 w-3" />
                             Critical
                           </Badge>
@@ -688,11 +563,11 @@ export default function Dashboard() {
             </div>
 
             {filteredItems.length === 0 && (
-              <Card className="bg-surface/30 border-border/50">
+              <Card className="bg-white border-gray-200">
                 <CardContent className="p-12 text-center">
-                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-foreground mb-2">No items found</h3>
-                  <p className="text-muted-foreground">Try adjusting your search or filter criteria</p>
+                  <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No items found</h3>
+                  <p className="text-gray-600">Try adjusting your search or filter criteria</p>
                 </CardContent>
               </Card>
             )}
@@ -701,61 +576,61 @@ export default function Dashboard() {
           {/* Order Summary Sidebar */}
           <div className="space-y-6">
             {/* Order Summary Card */}
-            <Card className="sticky top-24 bg-surface-elevated border-border/50 shadow-xl">
+            <Card className="sticky top-24 bg-white border-gray-200 shadow-xl">
               <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <div className="p-2 bg-gradient-primary rounded-lg">
-                    <ShoppingCart className="h-5 w-5 text-primary-foreground" />
+                <CardTitle className="flex items-center gap-2 text-gray-900">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <ShoppingCart className="h-5 w-5 text-white" />
                   </div>
                   Current Order
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-gray-600">
                   {orderItems.length} {orderItems.length === 1 ? 'item' : 'items'} selected
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {orderItems.length === 0 ? (
                   <div className="text-center py-8">
-                    <ShoppingBag className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground text-sm">Your order is empty</p>
-                    <p className="text-muted-foreground text-xs mt-1">Add items to get started</p>
+                    <ShoppingBag className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 text-sm">Your order is empty</p>
+                    <p className="text-gray-500 text-xs mt-1">Add items to get started</p>
                   </div>
                 ) : (
                   <>
                     <div className="space-y-3 max-h-80 overflow-y-auto">
                       {orderItems.map((item) => (
-                        <Card key={item.id} className="bg-background/50 border-border/30">
+                        <Card key={item.id} className="bg-gray-50 border-gray-200">
                           <CardContent className="p-3">
                             <div className="flex gap-3">
                               <img
                                 src={item.image || "/placeholder.svg"}
                                 alt={item.name}
-                                className="w-12 h-12 rounded-lg object-cover border border-border"
+                                className="w-12 h-12 rounded-lg object-cover border border-gray-200"
                               />
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-sm text-foreground truncate">{item.name}</h4>
-                                <p className="text-xs text-muted-foreground mb-2">${item.price} each</p>
+                                <h4 className="font-medium text-sm text-gray-900 truncate">{item.name}</h4>
+                                <p className="text-xs text-gray-600 mb-2">${item.price} each</p>
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <Button
                                       onClick={() => updateQuantity(item.id, -1)}
                                       size="sm"
                                       variant="outline"
-                                      className="h-7 w-7 p-0"
+                                      className="h-7 w-7 p-0 border-gray-300 text-gray-700 hover:bg-gray-100"
                                     >
                                       <Minus className="h-3 w-3" />
                                     </Button>
-                                    <span className="font-medium w-8 text-center text-sm">{item.quantity}</span>
+                                    <span className="font-medium w-8 text-center text-sm text-gray-900">{item.quantity}</span>
                                     <Button
                                       onClick={() => updateQuantity(item.id, 1)}
                                       size="sm"
                                       variant="outline"
-                                      className="h-7 w-7 p-0"
+                                      className="h-7 w-7 p-0 border-gray-300 text-gray-700 hover:bg-gray-100"
                                     >
                                       <Plus className="h-3 w-3" />
                                     </Button>
                                   </div>
-                                  <span className="font-semibold text-success text-sm">
+                                  <span className="font-semibold text-green-600 text-sm">
                                     ${(item.price * item.quantity).toFixed(2)}
                                   </span>
                                 </div>
@@ -766,31 +641,31 @@ export default function Dashboard() {
                       ))}
                     </div>
 
-                    <Separator className="bg-border/50" />
+                    <Separator className="bg-gray-200" />
 
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
-                        <span className="font-semibold text-foreground">Total:</span>
-                        <span className="font-bold text-xl text-success">
+                        <span className="font-semibold text-gray-900">Total:</span>
+                        <span className="font-bold text-xl text-green-600">
                           ${totalAmount.toFixed(2)}
                         </span>
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-foreground">Delivery Date</Label>
+                        <Label className="text-sm font-medium text-gray-900">Delivery Date</Label>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                           <Input
                             type="date"
                             value={deadline}
                             onChange={(e) => setDeadline(e.target.value)}
                             min={new Date().toISOString().split("T")[0]}
-                            className="pl-10 bg-background"
+                            className="pl-10 bg-white text-gray-900"
                           />
                         </div>
                       </div>
 
-                      <Button onClick={sendRequest} className="w-full gap-2 bg-gradient-primary hover:opacity-90 transition-opacity">
+                      <Button onClick={sendRequest} className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white">
                         <Send className="h-4 w-4" />
                         Send Order Request
                       </Button>
@@ -801,26 +676,26 @@ export default function Dashboard() {
             </Card>
 
             {/* Quick Stats */}
-            <Card className="bg-surface-elevated border-border/50">
+            <Card className="bg-white border-gray-200">
               <CardHeader className="pb-3">
-                <CardTitle className="text-foreground text-base">Store Overview</CardTitle>
+                <CardTitle className="text-gray-900 text-base">Store Overview</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Total Products</span>
-                  <Badge variant="outline">{totalItems}</Badge>
+                  <span className="text-sm text-gray-600">Total Products</span>
+                  <Badge variant="outline" className="border-gray-300 text-gray-700 bg-gray-50">{totalItems}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Low Stock</span>
-                  <Badge variant="outline" className="border-warning text-warning">{lowStockItems}</Badge>
+                  <span className="text-sm text-gray-600">Low Stock</span>
+                  <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-50">{lowStockItems}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Out of Stock</span>
-                  <Badge variant="outline" className="border-destructive text-destructive">{outOfStockItems}</Badge>
+                  <span className="text-sm text-gray-600">Out of Stock</span>
+                  <Badge variant="outline" className="border-red-500 text-red-600 bg-red-50">{outOfStockItems}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Order Value</span>
-                  <span className="font-semibold text-success">${totalAmount.toFixed(2)}</span>
+                  <span className="text-sm text-gray-600">Order Value</span>
+                  <span className="font-semibold text-green-600">${totalAmount.toFixed(2)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -830,24 +705,24 @@ export default function Dashboard() {
 
       {/* Shortage Management Dialog */}
       <Dialog open={showShortagePopup} onOpenChange={setShowShortagePopup}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden bg-surface-elevated border-border">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden bg-white border-gray-200">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-foreground">
-              <div className="p-2 bg-gradient-primary rounded-lg">
-                <Calculator className="h-5 w-5 text-primary-foreground" />
+            <DialogTitle className="flex items-center gap-2 text-gray-900">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <Calculator className="h-5 w-5 text-white" />
               </div>
               Smart Inventory Assistant
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
+            <DialogDescription className="text-gray-600">
               AI-powered inventory optimization based on current stock levels, demand patterns, and business requirements.
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="items" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-surface">
-              <TabsTrigger value="items" className="text-foreground">Items Selection</TabsTrigger>
-              <TabsTrigger value="strategy" className="text-foreground">Order Strategy</TabsTrigger>
-              <TabsTrigger value="summary" className="text-foreground">Order Summary</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 bg-gray-100">
+              <TabsTrigger value="items" className="text-gray-900 data-[state=active]:bg-white data-[state=active]:text-gray-900">Items Selection</TabsTrigger>
+              <TabsTrigger value="strategy" className="text-gray-900 data-[state=active]:bg-white data-[state=active]:text-gray-900">Order Strategy</TabsTrigger>
+              <TabsTrigger value="summary" className="text-gray-900 data-[state=active]:bg-white data-[state=active]:text-gray-900">Order Summary</TabsTrigger>
             </TabsList>
 
             <TabsContent value="items" className="space-y-4">
@@ -859,7 +734,7 @@ export default function Dashboard() {
                   }}
                   size="sm"
                   variant="destructive"
-                  className="gap-2"
+                  className="gap-2 bg-red-600 hover:bg-red-700 text-white"
                 >
                   <AlertTriangle className="h-4 w-4" />
                   Select Critical Items
@@ -868,7 +743,7 @@ export default function Dashboard() {
                   onClick={() => setSelectedShortageItems(new Set())}
                   size="sm"
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   <X className="h-4 w-4" />
                   Clear Selection
@@ -880,7 +755,7 @@ export default function Dashboard() {
                   }}
                   size="sm"
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   <Target className="h-4 w-4" />
                   Select All
@@ -891,69 +766,64 @@ export default function Dashboard() {
                 {shortageItems.map((item) => (
                   <Card
                     key={item.id}
-                    className={`cursor-pointer transition-all hover:shadow-md ${
-                      selectedShortageItems.has(item.id)
-                        ? "border-primary bg-primary/5"
-                        : item.urgency === "critical"
-                          ? "border-destructive/30 bg-destructive/5"
-                          : item.urgency === "low"
-                            ? "border-warning/30 bg-warning/5"
-                            : "border-warning/20 bg-warning/5"
-                    }`}
+                    className={`cursor-pointer transition-all hover:shadow-md ${selectedShortageItems.has(item.id)
+                      ? "border-blue-500 bg-blue-50"
+                      : item.urgency === "critical"
+                        ? "border-red-300 bg-red-50"
+                        : item.urgency === "low"
+                          ? "border-orange-300 bg-orange-50"
+                          : "border-orange-200 bg-orange-50"
+                      }`}
                     onClick={() => toggleShortageSelection(item.id)}
                   >
                     <CardContent className="p-4">
                       <div className="flex gap-4">
                         <Checkbox
                           checked={selectedShortageItems.has(item.id)}
-                          onChange={() => toggleShortageSelection(item.id)}
+                          onCheckedChange={() => toggleShortageSelection(item.id)}
                           className="mt-1"
                         />
                         <img
                           src={item.image || "/placeholder.svg"}
                           alt={item.name}
-                          className="w-16 h-16 rounded-lg object-cover border border-border bg-surface flex-shrink-0"
+                          className="w-16 h-16 rounded-lg object-cover border border-gray-200 bg-gray-100 flex-shrink-0"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <h4 className="font-semibold text-foreground">{item.name}</h4>
-                              <p className="text-sm text-muted-foreground">{item.category}</p>
+                              <h4 className="font-semibold text-gray-900">{item.name}</h4>
+                              <p className="text-sm text-gray-600">{item.category}</p>
                             </div>
                             <div className="flex gap-2">
-                              <Badge variant={item.urgency === "critical" ? "destructive" : "outline"}>
+                              <Badge variant={item.urgency === "critical" ? "destructive" : "outline"} className={item.urgency === "critical" ? "bg-red-100 text-red-800 border-red-300" : "border-orange-500 text-orange-600 bg-orange-50"}>
                                 {item.urgency}
                               </Badge>
-                              <Badge variant="secondary">
+                              <Badge variant="secondary" className="bg-gray-100 text-gray-700 border-gray-300">
                                 {item.priority} priority
                               </Badge>
                             </div>
                           </div>
-                          
+
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-3">
-                            <div className="bg-surface rounded-lg p-2">
-                              <span className="text-muted-foreground block text-xs">Current</span>
-                              <span className={`font-semibold ${item.currentStock === 0 ? "text-destructive" : "text-warning"}`}>
+                            <div className="bg-gray-100 rounded-lg p-2">
+                              <span className="text-gray-600 block text-xs">Current</span>
+                              <span className={`font-semibold ${item.currentStock === 0 ? "text-red-600" : "text-orange-600"}`}>
                                 {item.currentStock}
                               </span>
                             </div>
-                            <div className="bg-surface rounded-lg p-2">
-                              <span className="text-muted-foreground block text-xs">Required</span>
-                              <span className="font-semibold text-success">{item.minStock}</span>
+                            <div className="bg-gray-100 rounded-lg p-2">
+                              <span className="text-gray-600 block text-xs">Required</span>
+                              <span className="font-semibold text-green-600">{item.minStock}</span>
                             </div>
-                            <div className="bg-surface rounded-lg p-2">
-                              <span className="text-muted-foreground block text-xs">Lead Time</span>
-                              <span className="font-semibold text-foreground">{item.leadTime} days</span>
-                            </div>
-                            <div className="bg-surface rounded-lg p-2">
-                              <span className="text-muted-foreground block text-xs">Reliability</span>
-                              <span className="font-semibold text-accent">{item.supplierReliability}%</span>
+                            <div className="bg-gray-100 rounded-lg p-2">
+                              <span className="text-gray-600 block text-xs">Lead Time</span>
+                              <span className="font-semibold text-gray-900">{item.leadTime} days</span>
                             </div>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="text-sm text-muted-foreground">Quantity:</span>
+                              <span className="text-sm text-gray-600">Quantity:</span>
                               <div className="flex items-center gap-2">
                                 <Button
                                   onClick={(e) => {
@@ -963,7 +833,7 @@ export default function Dashboard() {
                                   }}
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 w-8 p-0"
+                                  className="h-8 w-8 p-0 border-gray-300 text-gray-700 hover:bg-gray-100"
                                 >
                                   <Minus className="h-3 w-3" />
                                 </Button>
@@ -974,7 +844,7 @@ export default function Dashboard() {
                                     e.stopPropagation()
                                     updateShortageQuantity(item.id, parseInt(e.target.value) || 0)
                                   }}
-                                  className="w-16 h-8 text-center bg-background"
+                                  className="w-16 h-8 text-center bg-white text-gray-900"
                                   min="0"
                                   max={item.maxStock}
                                 />
@@ -986,15 +856,15 @@ export default function Dashboard() {
                                   }}
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 w-8 p-0"
+                                  className="h-8 w-8 p-0 border-gray-300 text-gray-700 hover:bg-gray-100"
                                 >
                                   <Plus className="h-3 w-3" />
                                 </Button>
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xs text-muted-foreground">Suggested: {item.suggestedQuantity}</div>
-                              <div className="font-semibold text-success">
+                              <div className="text-xs text-gray-600">Suggested: {item.suggestedQuantity}</div>
+                              <div className="font-semibold text-green-600">
                                 ${(item.price * (item.customQuantity ?? item.suggestedQuantity)).toFixed(2)}
                               </div>
                             </div>
@@ -1009,25 +879,24 @@ export default function Dashboard() {
 
             <TabsContent value="strategy" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card className="bg-surface border-border/50">
+                <Card className="bg-gray-50 border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-foreground">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <TrendingUp className="h-5 w-5" />
                       Ordering Strategy
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-3">
-                      <Label className="text-foreground">Select your ordering approach:</Label>
+                      <Label className="text-gray-900">Select your ordering approach:</Label>
                       <div className="space-y-3">
                         {[
                           { value: "conservative", label: "Conservative", desc: "Order 80% of shortage (Lower cash commitment)", icon: "🛡️" },
                           { value: "balanced", label: "Balanced", desc: "Order exact shortage amount (Recommended)", icon: "⚖️" },
                           { value: "aggressive", label: "Aggressive", desc: "Order above minimum (Higher buffer)", icon: "🚀" }
                         ].map(({ value, label, desc, icon }) => (
-                          <Card key={value} className={`cursor-pointer transition-colors ${
-                            orderingStrategy === value ? "border-primary bg-primary/5" : "bg-surface hover:bg-surface/80"
-                          }`}>
+                          <Card key={value} className={`cursor-pointer transition-colors ${orderingStrategy === value ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-gray-50"
+                            }`}>
                             <CardContent className="p-3">
                               <div className="flex items-start space-x-3">
                                 <input
@@ -1043,9 +912,9 @@ export default function Dashboard() {
                                   <Label htmlFor={value} className="cursor-pointer">
                                     <div className="flex items-center gap-2 mb-1">
                                       <span className="text-lg">{icon}</span>
-                                      <span className="font-medium text-foreground">{label}</span>
+                                      <span className="font-medium text-gray-900">{label}</span>
                                     </div>
-                                    <span className="text-sm text-muted-foreground">{desc}</span>
+                                    <span className="text-sm text-gray-600">{desc}</span>
                                   </Label>
                                 </div>
                               </div>
@@ -1057,9 +926,9 @@ export default function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-surface border-border/50">
+                <Card className="bg-gray-50 border-gray-200">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-foreground">
+                    <CardTitle className="flex items-center gap-2 text-gray-900">
                       <DollarSign className="h-5 w-5" />
                       Budget Controls
                     </CardTitle>
@@ -1069,30 +938,29 @@ export default function Dashboard() {
                       <Checkbox
                         id="cashflow"
                         checked={cashFlowMode}
-                        //@ts-ignore
                         onCheckedChange={setCashFlowMode}
                       />
-                      <Label htmlFor="cashflow" className="text-foreground">Enable budget limit</Label>
+                      <Label htmlFor="cashflow" className="text-gray-900">Enable budget limit</Label>
                     </div>
-                    
+
                     {cashFlowMode && (
                       <div className="space-y-3">
-                        <Label htmlFor="budget" className="text-foreground">Maximum order budget ($)</Label>
+                        <Label htmlFor="budget" className="text-gray-900">Maximum order budget ($)</Label>
                         <Input
                           id="budget"
                           type="number"
                           value={budgetLimit}
                           onChange={(e) => setBudgetLimit(parseFloat(e.target.value) || 0)}
                           placeholder="Enter budget limit"
-                          className="bg-background"
+                          className="bg-white text-gray-900 placeholder-gray-500"
                           min="0"
                           step="0.01"
                         />
-                        <div className="p-3 bg-surface-elevated rounded-lg">
-                          <p className="text-sm text-muted-foreground">
-                            Current order total: <span className="font-medium text-foreground">${shortageOrderTotal.toFixed(2)}</span>
+                        <div className="p-3 bg-white rounded-lg">
+                          <p className="text-sm text-gray-600">
+                            Current order total: <span className="font-medium text-gray-900">${shortageOrderTotal.toFixed(2)}</span>
                             {budgetLimit > 0 && shortageOrderTotal > budgetLimit && (
-                              <span className="text-destructive ml-2 flex items-center gap-1">
+                              <span className="text-red-600 ml-2 flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3" />
                                 Exceeds budget!
                               </span>
@@ -1105,9 +973,9 @@ export default function Dashboard() {
                 </Card>
               </div>
 
-              <Card className="bg-surface border-border/50">
+              <Card className="bg-gray-50 border-gray-200">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-foreground">
+                  <CardTitle className="flex items-center gap-2 text-gray-900">
                     <Truck className="h-5 w-5" />
                     Delivery Preferences
                   </CardTitle>
@@ -1115,19 +983,19 @@ export default function Dashboard() {
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="shortage-deadline" className="text-foreground">Preferred delivery date</Label>
+                      <Label htmlFor="shortage-deadline" className="text-gray-900">Preferred delivery date</Label>
                       <Input
                         id="shortage-deadline"
                         type="date"
                         value={customDeadline}
                         onChange={(e) => setCustomDeadline(e.target.value)}
-                        className="bg-background"
+                        className="bg-white text-gray-900"
                         min={new Date().toISOString().split("T")[0]}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-foreground">Delivery notes</Label>
-                      <div className="text-sm text-muted-foreground space-y-1 bg-surface-elevated p-3 rounded-lg">
+                      <Label className="text-gray-900">Delivery notes</Label>
+                      <div className="text-sm text-gray-600 space-y-1 bg-white p-3 rounded-lg">
                         <p>• Critical items will be prioritized</p>
                         <p>• High priority items qualify for expedited shipping</p>
                         <p>• Lead times vary by supplier reliability</p>
@@ -1140,64 +1008,64 @@ export default function Dashboard() {
 
             <TabsContent value="summary" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="bg-gradient-primary text-primary-foreground">
+                <Card className="bg-blue-600 text-white">
                   <CardContent className="p-4 text-center">
-                    <div className="text-3xl font-bold">{selectedCount}</div>
-                    <div className="text-sm opacity-90">Items Selected</div>
+                    <div className="text-3xl font-bold text-white">{selectedCount}</div>
+                    <div className="text-sm text-blue-100">Items Selected</div>
                   </CardContent>
                 </Card>
-                
-                <Card className="bg-gradient-success text-success-foreground">
+
+                <Card className="bg-green-600 text-white">
                   <CardContent className="p-4 text-center">
-                    <div className="text-3xl font-bold">${shortageOrderTotal.toFixed(2)}</div>
-                    <div className="text-sm opacity-90">Total Cost</div>
+                    <div className="text-3xl font-bold text-white">${shortageOrderTotal.toFixed(2)}</div>
+                    <div className="text-sm text-green-100">Total Cost</div>
                   </CardContent>
                 </Card>
-                
-                <Card className="bg-gradient-accent text-accent-foreground">
+
+                <Card className="bg-purple-600 text-white">
                   <CardContent className="p-4 text-center">
-                    <div className="text-3xl font-bold">
-                      {selectedShortageItems.size > 0 ? 
+                    <div className="text-3xl font-bold text-white">
+                      {selectedShortageItems.size > 0 ?
                         Math.round(shortageItems
                           .filter(item => selectedShortageItems.has(item.id))
                           .reduce((sum, item) => sum + item.leadTime, 0) / selectedShortageItems.size)
                         : 0
                       }
                     </div>
-                    <div className="text-sm opacity-90">Avg Lead Time (days)</div>
+                    <div className="text-sm text-purple-100">Avg Lead Time (days)</div>
                   </CardContent>
                 </Card>
               </div>
 
               {selectedCount > 0 && (
-                <Card className="bg-surface border-border/50">
+                <Card className="bg-gray-50 border-gray-200">
                   <CardHeader>
-                    <CardTitle className="text-foreground">Selected Items Summary</CardTitle>
+                    <CardTitle className="text-gray-900">Selected Items Summary</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {shortageItems
                         .filter(item => selectedShortageItems.has(item.id))
                         .map(item => (
-                          <div key={item.id} className="flex justify-between items-center p-3 bg-surface-elevated rounded-lg">
+                          <div key={item.id} className="flex justify-between items-center p-3 bg-white rounded-lg">
                             <div className="flex items-center gap-3">
                               <img
                                 src={item.image || "/placeholder.svg"}
                                 alt={item.name}
-                                className="w-10 h-10 rounded-lg object-cover border border-border"
+                                className="w-10 h-10 rounded-lg object-cover border border-gray-200"
                               />
                               <div>
-                                <span className="font-medium text-foreground">{item.name}</span>
-                                <Badge variant="outline" className="ml-2 text-xs">
+                                <span className="font-medium text-gray-900">{item.name}</span>
+                                <Badge variant="outline" className="ml-2 text-xs border-orange-500 text-orange-600 bg-orange-50">
                                   {item.urgency}
                                 </Badge>
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-medium text-foreground">
+                              <div className="font-medium text-gray-900">
                                 {item.customQuantity ?? item.suggestedQuantity} units
                               </div>
-                              <div className="text-success font-semibold">
+                              <div className="text-green-600 font-semibold">
                                 ${(item.price * (item.customQuantity ?? item.suggestedQuantity)).toFixed(2)}
                               </div>
                             </div>
@@ -1209,15 +1077,15 @@ export default function Dashboard() {
               )}
 
               {budgetLimit > 0 && shortageOrderTotal > budgetLimit && (
-                <Card className="border-destructive bg-destructive/5">
+                <Card className="border-red-500 bg-red-50">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-destructive/20 rounded-lg">
-                        <AlertTriangle className="h-5 w-5 text-destructive" />
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <AlertTriangle className="h-5 w-5 text-red-600" />
                       </div>
                       <div>
-                        <div className="font-medium text-destructive">Budget Exceeded</div>
-                        <div className="text-sm text-muted-foreground">
+                        <div className="font-medium text-red-600">Budget Exceeded</div>
+                        <div className="text-sm text-gray-600">
                           Order total (${shortageOrderTotal.toFixed(2)}) exceeds budget limit (${budgetLimit.toFixed(2)}).
                           Please adjust quantities or increase budget.
                         </div>
@@ -1229,11 +1097,11 @@ export default function Dashboard() {
             </TabsContent>
           </Tabs>
 
-          <div className="flex gap-3 pt-4 border-t border-border">
+          <div className="flex gap-3 pt-4 border-t border-gray-200">
             <Button
               onClick={sendSelectedShortageOrders}
               disabled={selectedCount === 0 || (budgetLimit > 0 && shortageOrderTotal > budgetLimit)}
-              className="flex-1 gap-2 bg-gradient-primary hover:opacity-90"
+              className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
             >
               <Bell className="h-4 w-4" />
               Send Selected Orders ({selectedCount} items - ${shortageOrderTotal.toFixed(2)})
@@ -1241,7 +1109,7 @@ export default function Dashboard() {
             <Button
               onClick={() => setShowShortagePopup(false)}
               variant="outline"
-              className="gap-2"
+              className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </Button>

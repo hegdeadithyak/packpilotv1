@@ -25,7 +25,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import Logo from '@/public/logo.svg';
+import Image from 'next/image';
+
 import {
     Truck,
     Package,
@@ -388,8 +389,15 @@ export default function SamplePage() {
                     <div className="container mx-auto px-6 py-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-4">
-                                <div className="relative p-3 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl border border-primary/30">
-                                    <Logo className="w-12 h-12 text-primary" />
+                                <div className="relative">
+                                    <Image
+                                    src="/logo_image.jpg"  // <-- your JPG file here
+                                    alt="PackPilot Logo"
+                                    width={80}
+                                    height={80}
+                                    className="rounded-xl"
+                                    />
+
                                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
                                 </div>
                                 <div>
@@ -701,18 +709,25 @@ export default function SamplePage() {
     return (
         <div className="h-screen bg-gradient-to-br from-[#0f0f10] via-[#1a1a2e] to-[#16213e] text-white overflow-hidden">
             {/* Enhanced Header */}
-            <header className="border-b border-primary/20 bg-[#0f0f10]/95 backdrop-blur-sm z-50 relative">
+            <header className="border-b border-primary/ backdrop-blur-sm z-50 relative">
                 <div className="container mx-auto px-4 py-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
-                            <div className="relative p-3 bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl border border-primary/30">
-                                <Logo className="w-12 h-12 text-primary" />
+                            <div className="relative">
+                                <Image
+                                    src="/logo_image.jpg"  // <-- your JPG file here
+                                    alt="PackPilot Logo"
+                                    width={80}
+                                    height={80}
+                                    className="rounded-xl"
+                                    />
+
                                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
                             </div>
 
                             <div>
                                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                                    PackPilot Demo
+                                    PackPilot
                                 </h1>
                                 <p className="text-sm text-primary font-medium">
                                     {currentWorkspace?.name || workspaceName}
