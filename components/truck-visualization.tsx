@@ -11,7 +11,6 @@ import { PhysicsDebugger } from "@/components/3d/physics-debugger"
 import { TwoDRenderer } from "@/components/2d/two-d-renderer"
 import { useOptimizationStore } from "@/store/optimization-store"
 import { useFrame } from "@react-three/fiber"
-import { RouteStopsManager } from '@/utils/stop-manager'
 import {
   PhysicsSimulationController,
   EnhancedBoxRenderer,
@@ -213,6 +212,143 @@ let globalSelectCallbacks: Set<(box: SelectedBoxInfo | null) => void> = new Set(
 import { suspend } from 'suspend-react'
 const bridge = import('@pmndrs/assets/hdri/warehouse.exr')
 
+// Add these functions to your truck-visualization.tsx file
+// Place them after the useRouteStore definition (around line 110)
+
+// Initialize route store with delivery stops
+export function initializeRouteStore(routes: any[]): boolean {
+  try {
+    if (!routes || routes.length === 0) {
+      console.warn('No routes provided for initialization');
+      return false;
+    }
+
+    const { deliveryStops, addDeliveryStop } = useRouteStore.getState();
+    
+    // Clear existing stops first
+    useRouteStore.setState({ deliveryStops: [] });
+    
+    // Add each route as a delivery stop
+    routes.forEach((route, index) => {
+      const warehouse: Warehouse = {
+        id: index + 1,
+        name: route.name,
+        address: route.address,
+        coordinates: route.coordinates,
+        capacity: route.estimatedBoxes * 100, // Estimate capacity
+        orderWarehouses: [],
+        deliveryRoutes: []
+      };
+      
+      // Create the delivery stop
+      const deliveryStop: DeliveryStop = {
+        id: route.id,
+        warehouseId: warehouse.id,
+        warehouse,
+        order: route.priority,
+        estimatedArrival: new Date(Date.now() + route.priority * 60 * 60 * 1000).toISOString(),
+        isCompleted: false,
+        name: `Stop ${route.priority}` // Use simple format
+      };
+      
+      // Add to store
+      useRouteStore.setState(state => ({
+        deliveryStops: [...state.deliveryStops, deliveryStop]
+      }));
+    });
+    
+    console.log('✅ Route store initialized with', routes.length, 'stops');
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize route store:', error);
+    return false;
+  }
+}
+
+// Check if route store is ready and has stops
+export function isRouteStoreReady(): boolean {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    return Array.isArray(deliveryStops) && deliveryStops.length > 0;
+  } catch (error) {
+    console.error('Error checking route store readiness:', error);
+    return false;
+  }
+}
+
+// Additional helper function to get available destinations safely
+export function getAvailableDestinations(): string[] {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    if (!deliveryStops || deliveryStops.length === 0) {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]; // Default fallback
+    }
+    return deliveryStops.map(stop => stop.name);
+  } catch (error) {
+    console.warn('Error getting destinations from route store:', error);
+    return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]; // Default fallback
+  }
+}
+
+// Initialize route store with default stops if empty
+export function ensureRouteStoreHasDefaults(): void {
+  try {
+    const { deliveryStops } = useRouteStore.getState();
+    
+    if (deliveryStops.length === 0) {
+      console.log('🔄 Initializing route store with default stops');
+      
+      const defaultWarehouses: Warehouse[] = [
+        {
+          id: 1,
+          name: "Distribution Center",
+          address: "123 Main St, Dallas, TX",
+          coordinates: { lat: 32.7767, lng: -96.7970 },
+          capacity: 10000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 2,
+          name: "Store #4532",
+          address: "456 Oak Ave, Dallas, TX",
+          coordinates: { lat: 32.7867, lng: -96.7870 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 3,
+          name: "Store #2901",
+          address: "789 Pine St, Dallas, TX",
+          coordinates: { lat: 32.7967, lng: -96.7770 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        },
+        {
+          id: 4,
+          name: "Store #7834",
+          address: "321 Elm Dr, Dallas, TX",
+          coordinates: { lat: 32.8067, lng: -96.7670 },
+          capacity: 5000,
+          orderWarehouses: [],
+          deliveryRoutes: []
+        }
+      ];
+
+      // Add default stops
+      defaultWarehouses.forEach(warehouse => {
+        useRouteStore.getState().addDeliveryStop(warehouse);
+      });
+      
+      console.log('✅ Default route stops added');
+    }
+  } catch (error) {
+    console.error('Error ensuring route store defaults:', error);
+  }
+}
+
 // Enhanced Orders Panel Component with Warehouse Stop Management and Route Sync
 function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -227,6 +363,7 @@ function OrdersPanel() {
   const [activeTab, setActiveTab] = useState<'orders' | 'stops'>('orders')
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(['pending', 'confirmed', 'in_transit', 'delivered']))
   const [showAddStopModal, setShowAddStopModal] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Route store integration
   const { 
@@ -281,11 +418,28 @@ function OrdersPanel() {
     }
   }
 
-  // Filter orders based on selected statuses
+  // Filter orders based on selected statuses and search query
   useEffect(() => {
-    const filtered = orders.filter(order => selectedStatuses.has(order.status))
+    let filtered = orders.filter(order => selectedStatuses.has(order.status))
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(order => {
+        const productName = order.product?.name || ''
+        const retailerName = order.retail?.name || ''
+        const orderId = order.id.toString()
+        
+        return (
+          productName.toLowerCase().includes(query) ||
+          retailerName.toLowerCase().includes(query) ||
+          orderId.includes(query)
+        )
+      })
+    }
+    
     setFilteredOrders(filtered)
-  }, [orders, selectedStatuses])
+  }, [orders, selectedStatuses, searchQuery])
 
   // Load initial data
   useEffect(() => {
@@ -361,6 +515,11 @@ function OrdersPanel() {
   // Clear all status filters
   const clearAllStatusFilters = () => {
     setSelectedStatuses(new Set())
+  }
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('')
   }
 
   // Utility functions for styling
@@ -464,6 +623,38 @@ function OrdersPanel() {
         </div>
       )}
 
+      {/* Search Bar - Orders Only */}
+      {isExpanded && activeTab === 'orders' && (
+        <div className="p-4 border-b border-gray-700 bg-gray-800/30">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by product name, retailer, or order ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 pl-8 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+            />
+            <div className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+              🔍
+            </div>
+            {searchQuery && (
+              <button
+                onClick={clearSearch}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                title="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="mt-2 text-xs text-gray-400">
+              {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filter Panel - Orders Only */}
       {showFilters && isExpanded && activeTab === 'orders' && (
         <div className="p-4 border-b border-gray-700 bg-gray-800/30">
@@ -548,19 +739,32 @@ function OrdersPanel() {
                 <div className="text-center py-8 text-gray-400">
                   <div className="text-2xl mb-2">📭</div>
                   <div>
-                    {selectedStatuses.size === 0
-                      ? 'No status filters selected'
-                      : 'No orders match the selected filters'
-                    }
+                    {searchQuery ? (
+                      <>No orders match "{searchQuery}"</>
+                    ) : selectedStatuses.size === 0 ? (
+                      'No status filters selected'
+                    ) : (
+                      'No orders match the selected filters'
+                    )}
                   </div>
-                  {selectedStatuses.size === 0 && (
-                    <button
-                      onClick={selectAllStatuses}
-                      className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                    >
-                      Show All Orders
-                    </button>
-                  )}
+                  <div className="flex gap-2 justify-center mt-3">
+                    {searchQuery && (
+                      <button
+                        onClick={clearSearch}
+                        className="px-3 py-1 bg-cyan-600 text-white rounded text-xs hover:bg-cyan-700"
+                      >
+                        Clear Search
+                      </button>
+                    )}
+                    {selectedStatuses.size === 0 && (
+                      <button
+                        onClick={selectAllStatuses}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        Show All Statuses
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 filteredOrders.map((order) => (
@@ -1115,6 +1319,8 @@ function BoxControlPanel({ selectedBox }: { selectedBox: SelectedBoxInfo | null 
 }
 
 // Enhanced Interactive Box Renderer with Route-based Colors
+// Replace the InteractiveBoxRenderer function with this enhanced version
+// Replace the InteractiveBoxRenderer function with this version that has only black borders
 function InteractiveBoxRenderer({ box }: { box: any }) {
   const meshRef = useRef<THREE.Mesh>(null)
   const groupRef = useRef<THREE.Group>(null)
@@ -1157,7 +1363,6 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   const handlePointerEnter = useCallback((event: any) => {
     if (isSimulationRunning) return
-
     event.stopPropagation()
     setIsHovered(true)
 
@@ -1184,10 +1389,8 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   const handlePointerLeave = useCallback((event: any) => {
     if (isSimulationRunning) return
-
     event.stopPropagation()
     setIsHovered(false)
-
     globalHoveredBox = null
     globalHoverCallbacks.forEach(callback => callback(null))
   }, [isSimulationRunning])
@@ -1208,7 +1411,6 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   const handleClick = useCallback((event: any) => {
     if (isSimulationRunning) return
-
     event.stopPropagation()
 
     const selectedInfo: SelectedBoxInfo = {
@@ -1228,14 +1430,14 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
     // Priority: Destination > Fragile > Temperature
     if (box.destination) {
       const stopIndex = deliveryStops.findIndex(stop => stop.name === box.destination)
-      const colors = ["#ff6b6b", "#ffa726", "#66bb6a", "#42a5f5", "#ffee58", "#ab47bc"]
-      return colors[stopIndex % colors.length] || "#666666"
+      const colors = ["#d63031", "#e17055", "#00b894", "#0984e3", "#fdcb6e", "#6c5ce7"]
+      return colors[stopIndex % colors.length] || "#2d3436"
     }
-    if (box.isFragile) return "#ff6b6b"
+    if (box.isFragile) return "#d63031"
     switch (box.temperatureZone) {
-      case "frozen": return "#74c0fc"
-      case "cold": return "#91a7ff"
-      default: return "#51cf66"
+      case "frozen": return "#0984e3"
+      case "cold": return "#6c5ce7"
+      default: return "#00b894"
     }
   }
 
@@ -1245,6 +1447,7 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
 
   return (
     <group ref={groupRef} position={[localPosition.x, localPosition.y, localPosition.z]}>
+      {/* Main Box Mesh */}
       <mesh
         ref={meshRef}
         rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}
@@ -1260,46 +1463,115 @@ function InteractiveBoxRenderer({ box }: { box: any }) {
           color={getBoxColor(box)}
           transparent={box.isNew}
           opacity={getBoxOpacity(box)}
-          roughness={0.3}
-          metalness={0.1}
-          emissive={isHovered ? "#222222" : "#000000"}
-          emissiveIntensity={isHovered ? 0.1 : 0}
+          roughness={isHovered ? 0.2 : 0.4}
+          metalness={isHovered ? 0.3 : 0.1}
+          emissive={isHovered ? "#333333" : "#111111"}
+          emissiveIntensity={isHovered ? 0.2 : 0.05}
+          envMapIntensity={0.8}
         />
-
-        <mesh position={[0, box.height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[box.width * 0.8, box.length * 0.8]} />
-          <meshBasicMaterial
-            color="#ffffff"
-            transparent
-            opacity={0.9}
-          />
-        </mesh>
       </mesh>
 
-     
+      {/* ONLY BLACK BORDERS - Bold and Simple */}
+      <lineSegments rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
+        <edgesGeometry args={[new THREE.BoxGeometry(box.width, box.height, box.length), 1]} />
+        <lineBasicMaterial 
+          color="#000000"
+          transparent={false}
+          opacity={1.0}
+        />
+      </lineSegments>
 
+      {/* Top Label */}
+      <mesh position={[0, box.height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[Math.min(box.width * 0.9, 3), Math.min(box.length * 0.9, 2)]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={isHovered ? 1.0 : 0.85}
+        />
+      </mesh>
+
+      {/* Box ID/Name Text Background */}
+      <mesh position={[0, box.height / 2 + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[Math.min(box.width * 0.8, 2.5), Math.min(box.length * 0.3, 0.8)]} />
+        <meshBasicMaterial
+          color="#000000"
+          transparent
+          opacity={0.7}
+        />
+      </mesh>
+
+      {/* Corner Accent Dots */}
+      {[
+        [-box.width/2, box.height/2, -box.length/2],
+        [box.width/2, box.height/2, -box.length/2],
+        [-box.width/2, box.height/2, box.length/2],
+        [box.width/2, box.height/2, box.length/2]
+      ].map((pos, i) => (
+        //@ts-ignore
+        <mesh key={i} position={pos} rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
+          <sphereGeometry args={[0.05, 8, 8]} />
+          <meshBasicMaterial
+            color={isHovered ? "#ffffff" : getBoxColor(box)}
+            transparent
+            opacity={isHovered ? 0.9 : 0.6}
+          />
+        </mesh>
+      ))}
+
+      {/* Selection Highlight */}
       {isSelected && (
-        <mesh rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
-          <boxGeometry args={[box.width + 0.1, box.height + 0.1, box.length + 0.1]} />
-          <meshBasicMaterial
-            color="#ffff00"
-            transparent
-            opacity={0.3}
-            wireframe
-          />
-        </mesh>
+        <>
+          <mesh rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
+            <boxGeometry args={[box.width + 0.15, box.height + 0.15, box.length + 0.15]} />
+            <meshBasicMaterial
+              color="#00ffff"
+              transparent
+              opacity={0.2}
+            />
+          </mesh>
+          <lineSegments rotation={[0, localRotation ? Math.PI / 2 : 0, 0]}>
+            <edgesGeometry args={[new THREE.BoxGeometry(box.width + 0.15, box.height + 0.15, box.length + 0.15)]} />
+            <lineBasicMaterial 
+              color="#00ffff" 
+              transparent={true}
+              opacity={0.8}
+            />
+          </lineSegments>
+        </>
       )}
 
+      {/* Rotation Indicator */}
       {localRotation && (
-        <mesh position={[0, box.height / 2 + 0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[0.5, 0.5]} />
-          <meshBasicMaterial
-            color="#00ff00"
-            transparent
-            opacity={0.8}
-          />
-        </mesh>
+        <group position={[0, box.height / 2 + 0.3, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.15, 0.25, 8]} />
+            <meshBasicMaterial
+              color="#00ff00"
+              transparent
+              opacity={0.8}
+            />
+          </mesh>
+          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[0.1, 0.1]} />
+            <meshBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={0.9}
+            />
+          </mesh>
+        </group>
       )}
+
+      {/* Drop Shadow */}
+      <mesh position={[0, -box.height / 2 - 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[box.width * 0.9, box.length * 0.9]} />
+        <meshBasicMaterial
+          color="#000000"
+          transparent
+          opacity={0.2}
+        />
+      </mesh>
     </group>
   )
 }
@@ -1448,7 +1720,7 @@ function Scene() {
       <PerspectiveCamera makeDefault position={[20, 15, 20]} fov={50} near={0.1} far={1000} />
 
       <CameraController />
-
+    
       <Environment files={suspend(bridge).default} />
       <ambientLight intensity={0.3} />
       <directionalLight

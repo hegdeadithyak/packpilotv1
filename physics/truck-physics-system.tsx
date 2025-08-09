@@ -1,11 +1,12 @@
-// Enhanced physics system for truck simulation
+// Enhanced physics system for truck simulation with toast notifications
 "use client"
 
 import { useFrame } from "@react-three/fiber"
 import { useBox, usePlane } from "@react-three/cannon"
 import { useOptimizationStore } from "@/store/optimization-store"
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 import * as THREE from "three"
+import { useRouteStore } from "@/components/truck-visualization"
 
 // Physics constants
 const PHYSICS_CONSTANTS = {
@@ -37,7 +38,10 @@ let globalTruckPhysics: TruckPhysicsState = {
   turnDirection: 0,
 }
 
-// Hook to control truck physics simulation
+// Import toast from shadcn
+import { toast } from "sonner"
+
+// Hook to control truck physics simulation with sonner toast notifications
 export function useTruckPhysics() {
   const { simulationForces, isSimulationRunning } = useOptimizationStore()
 
@@ -46,26 +50,45 @@ export function useTruckPhysics() {
       // Simulate different driving scenarios
       const scenario = Math.floor(Math.random() * 4)
 
-      switch (scenario) {
-        case 0: // Acceleration
-          globalTruckPhysics.isAccelerating = true
-          globalTruckPhysics.acceleration.z = -simulationForces.acceleration
-          break
-        case 1: // Braking
-          globalTruckPhysics.isBraking = true
-          globalTruckPhysics.acceleration.z = simulationForces.braking
-          break
-        case 2: // Left turn
-          globalTruckPhysics.isTurning = true
-          globalTruckPhysics.turnDirection = -1
-          globalTruckPhysics.acceleration.x = simulationForces.turning
-          break
-        case 3: // Right turn
-          globalTruckPhysics.isTurning = true
-          globalTruckPhysics.turnDirection = 1
-          globalTruckPhysics.acceleration.x = -simulationForces.turning
-          break
-      }
+      // Wrap toast calls in setTimeout to ensure proper rendering
+      setTimeout(() => {
+        switch (scenario) {
+          case 0: // Acceleration
+            globalTruckPhysics.isAccelerating = true
+            globalTruckPhysics.acceleration.z = -simulationForces.acceleration
+            toast.success("🚛 Accelerating Forward", {
+              description: "Forward momentum affecting cargo",
+              position: "top-center",
+            })
+            break
+          case 1: // Braking
+            globalTruckPhysics.isBraking = true
+            globalTruckPhysics.acceleration.z = simulationForces.braking
+            toast.error("🛑 Emergency Braking", {
+              description: "Sudden stop - cargo shifting forward",
+              position: "top-center",
+            })
+            break
+          case 2: // Left turn
+            globalTruckPhysics.isTurning = true
+            globalTruckPhysics.turnDirection = -1
+            globalTruckPhysics.acceleration.x = simulationForces.turning
+            toast.info("↪️ Sharp Left Turn", {
+              description: "Lateral forces moving cargo right",
+              position: "top-center",
+            })
+            break
+          case 3: // Right turn
+            globalTruckPhysics.isTurning = true
+            globalTruckPhysics.turnDirection = 1
+            globalTruckPhysics.acceleration.x = -simulationForces.turning
+            toast.info("↩️ Sharp Right Turn", {
+              description: "Lateral forces moving cargo left", 
+              position: "top-center",
+            })
+            break
+        }
+      }, 0)
 
       // Reset after simulation time
       setTimeout(() => {
@@ -81,7 +104,7 @@ export function useTruckPhysics() {
   return globalTruckPhysics
 }
 
-// Enhanced physics box component
+// Enhanced physics box component (unchanged functionality)
 interface PhysicsBoxProps {
   box: any
   children?: React.ReactNode
@@ -91,7 +114,7 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
   const { simulationForces, isSimulationRunning, simulationSpeed } = useOptimizationStore()
 
   const [ref, api] = useBox(() => ({
-    mass: box.weight / 5, // Convert to reasonable physics mass
+    mass: box.weight/10, // Convert to reasonable physics mass
     position: [box.position.x, box.position.y, box.position.z],
     args: [box.width, box.height, box.length],
     material: {
@@ -121,7 +144,7 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
     const truckForce = new THREE.Vector3()
     truckForce.y += PHYSICS_CONSTANTS.GRAVITY * (box.weight / 100)
     if (globalTruckPhysics.isAccelerating) {
-      truckForce.z += simulationForces.acceleration * (box.weight / 100)
+      truckForce.z += simulationForces.acceleration * (box.weight / 1000)
     }
     if (globalTruckPhysics.isBraking) {
       truckForce.z -= simulationForces.braking * (box.weight / 1000)
@@ -163,7 +186,7 @@ export function PhysicsBox({ box, children }: PhysicsBoxProps) {
   )
 }
 
-// Truck bed physics boundary
+// Truck bed physics boundary (unchanged)
 export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; length: number; height: number } }) {
   // Floor
   const [floorRef] = usePlane(() => ({
@@ -202,7 +225,7 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
     type: 'Static',
   }))
 
-  // ADDED: Ceiling wall to prevent boxes from flying upward
+  // Ceiling wall to prevent boxes from flying upward
   const [ceilingRef] = usePlane(() => ({
     position: [0, dimensions.height, 0],
     rotation: [Math.PI / 2, 0, 0], // Horizontal plane facing downward
@@ -227,7 +250,6 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
       <mesh ref={backWallRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.height]} />
       </mesh>
-      {/* ADDED: Ceiling mesh */}
       <mesh ref={ceilingRef} visible={false}>
         <planeGeometry args={[dimensions.width, dimensions.length]} />
       </mesh>
@@ -235,17 +257,12 @@ export function TruckBedPhysics({ dimensions }: { dimensions: { width: number; l
   )
 }
 
-// Physics simulation controller
+// Physics simulation controller (simplified - no DOM elements)
 export function PhysicsSimulationController() {
   const {
     isSimulationRunning,
-    simulationForces,
-    runSimulation,
-    stopSimulation,
     simulationSpeed
   } = useOptimizationStore()
-
-  const truckPhysics = useTruckPhysics()
 
   useFrame((state, delta) => {
     if (isSimulationRunning) {
@@ -265,14 +282,64 @@ export function PhysicsSimulationController() {
   return null
 }
 
-// Enhanced box renderer that uses physics
+// Utility functions for route destinations
+export function getAvailableDestinations() {
+  try {
+    // Check if we're in a browser environment and the store is available
+    if (typeof window === 'undefined') {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"] // Default fallback
+    }
+
+    const store = useRouteStore.getState()
+    
+    if (!store || !store.deliveryStops || store.deliveryStops.length === 0) {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"] // Default fallback
+    }
+    
+    return store.deliveryStops.map(stop => stop.name)
+  } catch (error) {
+    console.warn('Route store not available, using default destinations:', error)
+    return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"] // Default fallback
+  }
+}
+
+// Alternative approach - make it async and lazy-loaded
+export async function getAvailableDestinationsAsync() {
+  try {
+    if (typeof window === 'undefined') {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]
+    }
+
+    const store = useRouteStore.getState()
+    
+    if (!store?.deliveryStops?.length) {
+      return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]
+    }
+    
+    return store.deliveryStops.map(stop => stop.name)
+  } catch (error) {
+    console.warn('Route store not available:', error)
+    return ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]
+  }
+}
+
+// Enhanced box renderer with physics and toast notifications
 export function EnhancedBoxRenderer({ box }: { box: any }) {
+  // Import the route store hook to access delivery stops
+  const { deliveryStops } = useRouteStore()
+
   const getBoxColor = (box: any) => {
-    if (box.isFragile) return "#ff6b6b"
+    // Priority: Destination > Fragile > Temperature
+    if (box.destination) {
+      const stopIndex = deliveryStops.findIndex(stop => stop.name === box.destination)
+      const colors = ["#d63031", "#e17055", "#00b894", "#0984e3", "#fdcb6e", "#6c5ce7"]
+      return colors[stopIndex % colors.length] || "#2d3436"
+    }
+    if (box.isFragile) return "#d63031"
     switch (box.temperatureZone) {
-      case "frozen": return "#74c0fc"
-      case "cold": return "#91a7ff"
-      default: return "#51cf66"
+      case "frozen": return "#0984e3"
+      case "cold": return "#6c5ce7"
+      default: return "#00b894"
     }
   }
 
@@ -291,11 +358,15 @@ export function EnhancedBoxRenderer({ box }: { box: any }) {
         metalness={0.1}
       />
 
-      {/* Box label */}
-      <mesh position={[0, box.height / 2 + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[box.width * 0.8, box.length * 0.8]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.9} />
-      </mesh>
+      {/* ONLY BLACK BORDERS - Same as InteractiveBoxRenderer */}
+      <lineSegments>
+        <edgesGeometry args={[new THREE.BoxGeometry(box.width, box.height, box.length), 1]} />
+        <lineBasicMaterial 
+          color="#000000"
+          transparent={false}
+          opacity={1.0}
+        />
+      </lineSegments>
     </PhysicsBox>
   )
 }
